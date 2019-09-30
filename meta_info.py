@@ -3,6 +3,7 @@ from enum import Enum
 from pydantic import BaseModel, ValidationError, validator
 import json
 import re
+import os, os.path
 jd = lambda x: json.dumps(x, sort_keys=True, ensure_ascii=True)
 
 def splitStr(string, maxLen = 115):
@@ -15,16 +16,21 @@ def splitStr(string, maxLen = 115):
 	breakRe=re.compile(r"[\s\[\]\(\)\{\}.,<>;:!|\\/=+\-*&^%$#@?~]")
 	while toDo:
 		lNow = toDo.pop()
-		if len(lNow) < maxLen:
+		if len(lNow) <= maxLen:
 			res.append(lNow)
 		else:
-			m=breakRe.findLeft(lNow, maxLen-1)
-			if m and m.index > maxLen/2:
-				res.append(lNow[:m.index+1])
-				toDo.push(lNow[m.index+1:])
-			else:
+			rNow=lNow[maxLen-1::-1]
+			done=False
+			for m in breakRe.finditer(rNow):
+				i = maxLen - m.start()
+				if i > maxLen/2:
+					res.append(lNow[:i])
+					toDo.append(lNow[i:])
+					done = True
+				break
+			if not done:
 				res.append(lNow[:maxLen])
-				toDo.push(lNow[maxLen:])
+				toDo.append(lNow[maxLen:])
 	return res
 
 
@@ -285,7 +291,7 @@ class MetaValue(MetaInfoBase):
 	meta_required: bool = False
 	meta_referenced_section: Optional[str]
 	meta_dimension: List[MetaDimension] = []
-	meta_default_value: Optional[dict]
+	meta_default_value: Optional[str]
 	meta_enum: Optional[List[MetaEnum]]
 	meta_query_enum: Optional[List[MetaQueryEnum]]
 	meta_range_expected: Optional[List[MetaRange]]
@@ -371,8 +377,8 @@ class MetaSection(MetaInfoBase):
 	meta_parent_section: Optional[str]
 	meta_repeats: bool = True
 	meta_required: bool = False
-	meta_chosen_key: Optional[str]
-	meta_context_identifier: Optional[str]
+	meta_chosen_key: Optional[List[str]]
+	meta_context_identifier: Optional[List[str]]
 	meta_contains: Optional[List[str]]
 
 
@@ -396,9 +402,8 @@ class MetaSection(MetaInfoBase):
 				ii=ii,
 				value=jd(self.meta_context_identifier)))
 		if self.meta_contains:
-			outF.write(',\n{ii}"meta_contains": '.format(
-				ii=ii))
-			writeStrMaybeList(outF, self.meta_contains, indent=indent+2)
+			outF.write(',\n{ii}"meta_contains": {value}'.format(
+				ii=ii, value=jd(self.meta_contains)))
 
 
 class MetaAbstract(MetaInfoBase):
@@ -406,7 +411,7 @@ class MetaAbstract(MetaInfoBase):
 
 MetaInfoEntry=Union[MetaDimensionValue, MetaValue, MetaSection, MetaAbstract]
 
-class MetadictRequire:
+class MetadictRequire(BaseModel):
 	metadict_required_name: str
 	metadict_required_version: Optional[str]
 
@@ -423,8 +428,8 @@ class MetadictRequire:
 		outF.write('\n'+(indent*' ')+'}')
 
 class MetaDictionary(BaseModel):
-	metadict_source: Optional[str]
 	metadict_name: str
+	metadict_source: Optional[List[str]]
 	metadict_description: Union[str,List[str]]
 	metadict_version: Optional[str]
 	metadict_require: List[MetadictRequire] = []
@@ -442,6 +447,14 @@ class MetaDictionary(BaseModel):
 		else:
 			return {}
 	
+	def standardize(self, compact=False):
+		if compact:
+			self.metadict_description=maybeJoinStr(self.metadict_description)
+		else:
+			self.metadict_description=splitStr(maybeJoinStr(self.metadict_description))
+		for el in self.meta_info_entry:
+			el.standardize(compact=compact)
+	
 	def write(self, outF, indent=0, writeName=True, writeSource=False):
 		outF.write("{")
 		ii = (indent+2) * ' '
@@ -454,7 +467,7 @@ class MetaDictionary(BaseModel):
 			outF.write('{comma}\n{ii}"metadict_source": {value}'.format(ii=ii,
 				comma=comma, value=jd(self.metadict_source)))
 			comma=','
-		outF.write('{comma}\n{ii}"metadict_description": '.format(ii=ii))
+		outF.write('{comma}\n{ii}"metadict_description": '.format(ii=ii, comma=comma))
 		writeStrMaybeList(outF, self.metadict_description, indent=indent+2)
 		if self.metadict_version is not None:
 			outF.write(',\n{ii}"metadict_version": {value}'.format(
@@ -480,36 +493,39 @@ class MetaDictionary(BaseModel):
 		outF.write('\n' + (indent * ' ') + '}')
 
 
-		@classmethod
-		def fromDict(cls, d):
-			try:
-				metadict_description = d.get("metadict_description", "")
-				metadict_version = d.get("metadict_version")
-				metadict_require = map(d.get("metadict_require", []), lambda x: MetadictRequire(**x))
-			except:
-				dd = { k:v for k,v in d.items() if k != "meta_info_entry"}
-				raise Exception("failed to get metadict attributes from {dd}")	
-			d_meta_info_entry = d.get("meta_info_entry",[])
-			meta_info_entry = []
-			for e in d_meta_info_entry:
-				meta_info_entry.append(MetaInfoBase.fromDict(e))
-			return cls(
-				metadict_description=metadict_description,
-				metadict_version=metadict_version,
-				metadict_require=metadict_require,
-				meta_info_entry=meta_info_entry
-			)
+	@classmethod
+	def fromDict(cls, d):
+		try:
+			metadict_name = d.get("metadict_name")
+			metadict_source = d.get("metadict_source")
+			metadict_description = d.get("metadict_description", "")
+			metadict_version = d.get("metadict_version")
+			metadict_require = [MetadictRequire(**x) for x in d.get("metadict_require", [])]
+		except:
+			dd = { k:v for k,v in d.items() if k != "meta_info_entry"}
+			raise Exception(f"failed to get metadict attributes from {dd}")	
+		d_meta_info_entry = d.get("meta_info_entry",[])
+		meta_info_entry = []
+		for e in d_meta_info_entry:
+			meta_info_entry.append(MetaInfoBase.fromDict(e))
+		return cls(
+			metadict_name=metadict_name,
+			metadict_source=metadict_source,
+			metadict_description=metadict_description,
+			metadict_version=metadict_version,
+			metadict_require=metadict_require,
+			meta_info_entry=meta_info_entry
+		)
 
 
 def FileLoader(paths: List[str]):
 	
 	def find(name):
 		for basep in paths:
-			path=os.path.join(basep, name)
-			p = basep + ".metadictionary.json"
+			p=os.path.join(basep, name + ".meta_dictionary.json")
 			if os.path.exists(p):
 				try:
-					d=json.load(open(p))
+					d=json.load(open(p, encoding='utf8'))
 					if d.get('metadict_name', name) != name:
 						raise Exception(f'metadict at {p} has unexpected name ({d["metadict_name"]})')
 					d['metadict_name']=name
@@ -527,7 +543,7 @@ def FileLoader(paths: List[str]):
 	
 	return find
 
-class MetaInfo:
+class MetaInfo(BaseModel):
 	dictionaries: Dict[str,MetaDictionary]
 	
 	def addMetaDict(self, name, metaDict):
@@ -542,7 +558,7 @@ class MetaInfo:
 			for n, d in self.dictionaries.items():
 				if n not in namesDone:
 					namesDone.add(n)
-					for dep in d.meta_require:
+					for dep in d.metadict_require:
 						name = dep.metadict_required_name
 						if name not in self.dictionaries:
 							newD=loadDictNamed(name)

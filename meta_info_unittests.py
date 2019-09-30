@@ -35,7 +35,7 @@ class TestMetaInfo(unittest.TestCase):
   "meta_name":"metadict_require_version",
   "meta_description":[
     "Expected version of the dictionary that should be loaded to undestand this ",
-    "dictionary."],
+    "dictionary and is very long and should be a description split on multiple lines."],
   "meta_parent_section":"metadict_require",
   "meta_data_type":"string"
 }"""
@@ -55,7 +55,7 @@ class TestMetaInfo(unittest.TestCase):
 	"meta_dimension": [
 		{ "meta_dimension_fixed": 3
 		}, {"meta_dimension_symbolic": "natom"}],
-	"meta_default_value": {"value":[2,4]},
+	"meta_default_value": "[0,0,0]",
 	"meta_enum": [{
 		"meta_enum_value": "value",
 		"meta_enum_description": "the base value"}, {
@@ -90,8 +90,8 @@ class TestMetaInfo(unittest.TestCase):
 	"meta_parent_section": "super_section",
 	"meta_repeats": true,
 	"meta_required": false,
-	"meta_chosen_key": "key_val",
-	"meta_context_identifier": "key_val",
+	"meta_chosen_key": ["key_val"],
+	"meta_context_identifier": ["key_val"],
 	"meta_contains": ["section_x","value_y"]
 }"""
 
