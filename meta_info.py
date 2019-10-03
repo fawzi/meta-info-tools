@@ -54,9 +54,23 @@ def writeFile(targetPath, writer):
 	with tempfile.NamedTemporaryFile(mode='w', encoding='utf8', suffix=".tmp", prefix=name, dir=dir, delete=False) as fOut:
 		try:
 			writer(fOut)
+			fOut.flush()
 		except:
 			raise Exception(f"Failure trying to write {targetPath}, leaving failed attempt in {fOut.name}")
 		replacePath(fOut.name, targetPath)
+
+def safeRemove(toRm):
+	"""moves the give files to a backup (unless they already are a backup (.bk))"""
+	for f in toRm:
+		if not f.endswith('.bk'):
+			t2=os.path.join(dir,f+'.'+timestamp+'.bk')
+			t3=t2
+			ii=0
+			while os.path.exists(t3):
+				ii+=1	
+				t3=os.path.join(dir,f'{f}.{timestamp}-{ii}.bk')
+			logging.warn('removing old meta_info_entry {f} (backup {t3})')
+			os.replace(os.path.join(dir,f), t3)
 
 
 def splitStr(string, maxLen=115):
@@ -235,6 +249,7 @@ class MetaQueryEnum(BaseModel):
 
 
 class MetaRangeKind(Enum):
+	"""The valid meta_range_kind values"""
 	abs_value = "abs-value"  # The range is for the absolute value of the scalar value (or every component for arrays)
 	norm2 = "norm2"  # The range is for the euclidean norm of the value
 	utf8_length = "utf8-length"  # The length of the string value using utf-8 encoding
@@ -242,6 +257,7 @@ class MetaRangeKind(Enum):
 
 
 class MetaRange(BaseModel):
+	'''Describes the expected range of the values (constraints on the values)'''
 	meta_range_kind: MetaRangeKind
 	meta_range_minimum: Optional[float]
 	meta_range_maximum: Optional[float]
@@ -281,6 +297,7 @@ class MetaDataType(Enum):
 
 
 class MetaDimension(BaseModel):
+	"""Defines a dimension of the (multi) dimensional array of a value of a meta_info_entry"""
 	meta_dimension_fixed: Optional[int]
 	meta_dimension_symbolic: Optional[str]
 
@@ -540,15 +557,7 @@ class MetaDictionary(BaseModel):
 			writeFile(os.path.join(dir, fName),
 				lambda outF: el.write(outF))
 		timestamp=date.today().isoformat()
-		for f in present.difference(written):
-			t2=os.path.join(dir,f+'.'+timestamp+'.bk')
-			t3=t2
-			ii=0
-			while os.path.exists(t3):
-				ii+=1	
-				t3=os.path.join(dir,f'{f}.{timestamp}-{ii}.bk')
-			logging.warn('removing old meta_info_entry {f} (backup {t3})')
-			os.replace(os.path.join(dir,f), t3)		
+		safeRemove(present.difference(written))
 
 	@classmethod
 	def fromDict(cls, d):
@@ -576,7 +585,7 @@ class MetaDictionary(BaseModel):
 			meta_info_entry=meta_info_entry)
 
 	@classmethod
-	def loadAtPath(cls, p, name=None):
+	def loadDictionaryAtPath(cls, p, name=None):
 		try:
 			if not name:
 				name = os.path.basename(p)
@@ -604,15 +613,17 @@ class MetaDictionary(BaseModel):
 	def fileLoader(cls, paths: List[str]):
 		def find(name):
 			for basep in paths:
-				p = os.path.join(basep, name + ".meta_dictionary.json")
-				if os.path.exists(p):
-					return cls.loadAtPath(p, name=name)
+				jsonP = os.path.join(basep, name + ".meta_dictionary.json")
+				explodedP = os.path.join(basep, name + ".meta_dictionary")
+				for p in [jsonP, explodedP]:
+					if os.path.exists(p):
+						return cls.loadAtPath(p, name=name) 
 			raise Exception(f'could not find dictionary {name} in {paths}')
 
 		return find
 
 	@classmethod
-	def loadExplodedDictionary(cls, path):
+	def loadExplodedDictionaryAtPath(cls, path):
 		expectedName = os.path.basename(path)
 		if expectedName.endswith('.meta_dictionary'):
 			expectedName = expectedName[:-len('.meta_dictionary')]
@@ -639,7 +650,7 @@ class MetaDictionary(BaseModel):
 		for f in entriesNames:
 			entryExpectedName=f[:-len('.meta_info_entry_json')]
 			entryPath=os.path.join(path,f)
-			with open(entryPath) as fIn:
+			with open(entryPath, encoding='utf8') as fIn:
 				try:
 					d=json.load(fIn)
 				except:
@@ -654,6 +665,22 @@ class MetaDictionary(BaseModel):
 			return cls.fromDict(baseDict)
 		except:
 			raise Exception(f'failure loading exploded dictionary at "{path}"')
+
+	@classmethod
+	def loadAtPath(cls, path):
+		"""loads the dictionary at the given path (automatically detecting its type)"""
+		if path.endswith('.meta_dictionary.json'):
+			if os.path.basename(path) == '_.meta_dictionary.json':
+				dPath=os.path.dirname(path)
+				if not dPath:
+					dPath='.'
+				return cls.loadExplodedDictionaryAtPath(dPath)
+			else:
+				return cls.loadDictionaryAtPath(path)
+		elif path.endswith('.meta_dictionary'):
+			return cls.loadExplodedDictionaryAtPath(path)
+		else:
+			raise Exception(f'Do not know how to interpret file {path}, expected either a file *.meta_dictionary.json or  directory *.meta_dictionary')
 
 
 class MetaInfo(BaseModel):
@@ -680,6 +707,7 @@ class MetaInfo(BaseModel):
 
 	def loadDictionariesStartingAtPath(self, dictPath, dictName=None, extraPaths=None,
 																		loadAll=False):
+		"""loads the dictionary at dictPath and all its dependencies (or if loadAll is true, all other dictionaries)"""
 		basePath = os.path.dirname(dictPath)
 		paths = [basePath]
 		if extraPaths:
