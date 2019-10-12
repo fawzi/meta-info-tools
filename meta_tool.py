@@ -138,7 +138,11 @@ if __name__ == '__main__':
 	parser_r.add_argument('--compact', action='store_true',
 	help='is given stores all descriptions in a single string, not a list of strings.')
 	parser_r.set_defaults(func=rewriteCmd)
-	args=parser.parse_args(['rewrite', '../meta_info/meta_info/meta_dictionary/common.meta_dictionary.json'])
+	#args=parser.parse_args(['rewrite', '../meta_info/meta_info/meta_dictionary/common.meta_dictionary.json'])
 	args=parser.parse_args(['cascade','--delete-old-bk'])
-	args.func(args)
+	#args=parser.parse_args()
+	if not hasattr(args, 'func'):
+		parser.print_help()
+	else:
+		args.func(args)
 
