@@ -5,38 +5,41 @@ import shutil
 
 defaultBasePath=os.path.realpath(os.path.normpath(os.path.abspath(os.path.join(os.path.dirname(__file__),'../meta_info'))))
 
-def cascade(explodedDir, dictionaryDir, deleteOldBk=False):
+def cleanDir(dir, maxDepth=4):
+	"""removes the backup (*.bk) files and directories from the path ddir up to a depth of maxDepth""" 
+	if maxDepth <= 0:
+		return
+	for dFile in os.listdir(dir):
+		dPath=os.path.join(dir, dFile)
+		if os.path.isdir(dPath):
+			if dFile.endswith('.bk'):
+				try:
+					shutils.rmtree(dPath)
+				except:
+					logging.exception(f"error cleaning up {dPath}")
+			else:
+				cleanDir(dPath, maxDepth - 1)
+		elif dFile.endswith('.bk'):
+			try:
+				os.remove(dPath)
+			except:
+				logging.exception(f"error cleaning up {dPath}")
+
+def cascade(explodedDir, dictionaryDir, docDir, deleteOldBk=False):
 	"""Reformats and propagate from exploded to single file dictionaries"""
 	explodedDone=set()
 	dictDone=set()
+	mInfo=MetaInfo()
 	if deleteOldBk:
 		dirToClean = []
 		if explodedDir:
 			dirToClean.append(explodedDir)
 		if dictionaryDir:
 			dirToClean.append(dictionaryDir)
+		if docDir:
+			dirToClean.append(docDir)
 		for dir in dirToClean:
-			for dFile in os.listdir(dir):
-				dPath=os.path.join(dir, dFile)
-				if os.path.isdir(dPath):
-					if dFile.endswith('.bk'):
-						try:
-							shutils.rmtree(dPath)
-						except:
-							logging.exception(f"error cleaning up {dPath}")
-					else:
-						for dFile2 in os.listdir(dPath):
-							if dFile2.endswith('.bk'):
-								dPath2=os.path.join(dPath, dFile2)
-								try:
-									os.remove(dPath2)
-								except:
-									logging.exception(f"error cleaning up {dPath2}")
-				elif dFile.endswith('.bk'):
-					try:
-						os.remove(dPath)
-					except:
-						logging.exception(f"error cleaning up {dPath}")
+			cleanDir(dir)
 	if explodedDir:
 		for dFile in os.listdir(explodedDir):
 			try:
@@ -46,6 +49,7 @@ def cascade(explodedDir, dictionaryDir, deleteOldBk=False):
 					dPath=os.path.join(explodedDir,dFile)
 					d=MetaDictionary.loadAtPath(dPath)
 					d.standardize()
+					mInfo.addDictionary(d)
 					d.writeExploded(explodedDir)
 					if d.metadict_name + '.meta_dictionary'!= dFile:
 						safeRemove([dPath])
@@ -67,6 +71,7 @@ def cascade(explodedDir, dictionaryDir, deleteOldBk=False):
 					dPath = os.path.join(dictionaryDir, dFile)
 					d=MetaDictionary.loadAtPath(dPath)
 					d.standardize()
+					mInfo.addDictionary(d)
 					dOutPath=os.path.join(dictionaryDir,d.metadict_name + '.meta_dictionary.json')
 					writeFile(dOutPath, lambda f: d.write(f))
 					dictDone.add(d.metadict_name)
@@ -74,14 +79,37 @@ def cascade(explodedDir, dictionaryDir, deleteOldBk=False):
 						safeRemove([dPath])
 			except:
 				logging.exception(f'Error handling {dFile}')
-
-
+	if docDir:
+		indexBody=['<h1>Documentation for dictionaries</h1>\n<ul class="index">\n']
+		regenPaths=[]
+		for dName,d in sorted(mInfo.dictionaries.items()):
+			try:
+				schema=Schema.forDictionary(dName, mInfo)
+				targetDir=os.path.join(docDir,dName)
+				siteWriter=SiteWriter(schema, targetDir)
+				siteWriter.writeAll()
+				siteWriter.cleanupUnknown()
+				indexBody.append(f'<li><a href="{dName}/index.html"><label class="index">{dName}</label></a></li>\n')
+				regenPaths.append(targetDir)
+			except:
+				logging.exception(f'Failure when generating documentation for dictionary {dName}.')
+		indexBody.append('</ul>\n')
+		if siteWriter:
+			siteWriter.resetToDir(docDir)
+			if regenPaths:
+				for d in regenPaths:
+					siteWriter.addGeneratedPath(d)
+				indexPath=os.path.join(docDir,'index.html')
+				siteWriter.writeLayout(indexPath, body=indexBody, basePath=os.path.basename(regenPaths[0]), title='Schemas Index')
+			siteWriter.cleanupUnknown()
+			
 def cascadeCmd(args):
-	if not args.exploded_directory and not args.dict_directory:
+	if not args.exploded_directory and not args.dict_directory and not args.doc_directory:
 		if not args.base_directory:
 			args.base_directory=defaultBasePath
 		args.exploded_directory=os.path.join(args.base_directory, "meta_info_exploded")
 		args.dict_directory=os.path.join(args.base_directory,"meta_info/meta_dictionary")
+		args.dict_directory=os.path.join(args.base_directory,"docs")
 	cascade(args.exploded_directory, args.dict_directory, deleteOldBk=args.delete_old_bk)
 
 
@@ -126,6 +154,7 @@ if __name__ == '__main__':
 	parser_cascade.add_argument('--dict-directory', type=str,
 		help='path to the directory with the .meta_dictionary.json dictionaries')
 	parser_cascade.add_argument('--delete-old-bk', action='store_true')
+	parser_cascade.
 	parser_cascade.set_defaults(func=cascadeCmd)
 	# create the parser for the "rewrite" command
 	parser_r = subparsers.add_parser('rewrite', help='rewrites a dictionary possibly changing its format')

@@ -1,4 +1,4 @@
-from typing import Union, List, Optional, Dict, Set
+from typing import Union, List, Optional, Dict, Set, Any
 from enum import Enum
 from pydantic import BaseModel, ValidationError, validator
 from datetime import date
@@ -61,15 +61,15 @@ def writeFile(targetPath, writer):
       suffix=".tmp",
       prefix=name,
       dir=dir,
-      delete=False) as fOut:
+      delete=False) as outF:
     try:
-      writer(fOut)
-      fOut.flush()
+      writer(outF)
+      outF.flush()
     except:
       raise Exception(
-        f"Failure trying to write {targetPath}, leaving failed attempt in {fOut.name}"
+        f"Failure trying to write {targetPath}, leaving failed attempt in {outF.name}"
       )
-    replacePath(fOut.name, targetPath)
+    replacePath(outF.name, targetPath)
 
 
 def safeRemove(toRm):
@@ -82,7 +82,7 @@ def safeRemove(toRm):
       while os.path.exists(t3):
         ii += 1
         t3 = os.path.join(dir, f'{f}.{timestamp}-{ii}.bk')
-      logging.warn('removing old meta_info_entry {f} (backup {t3})')
+      logging.warn('removing old file {f} (backup {t3})')
       os.replace(os.path.join(dir, f), t3)
 
 
@@ -159,6 +159,15 @@ class MetaInfoBase(BaseModel):
   meta_deprecated: bool = False
   meta_abstract_types: List[str] = []
 
+  def allKeys(self):
+    return [
+      'meta_name', 'meta_type', 'meta_description', 'meta_deprecated',
+      'meta_abstract_types'
+    ]
+
+  def allSetKeys(self):
+    [x for x in self.allKeys() if getattr(x, None) is not None]
+
   def standardize(self, compact=False):
     """Standardizes the values stored (mainly the description formatting)"""
     if compact:
@@ -169,7 +178,7 @@ class MetaInfoBase(BaseModel):
   def writeInternal(self, outF, indent):
     pass
 
-  def write(self, outF, indent=0):
+  def write(self, outF, indent=0, writeExtra=None):
     ii = (indent + 2) * " "
     outF.write("""{{
 {ii}"meta_name": {meta_name},
@@ -184,6 +193,8 @@ class MetaInfoBase(BaseModel):
       outF.write(',\n{ii}"meta_abstract_types": {value}'.format(
         ii=ii, value=jd(self.meta_abstract_types)))
     self.writeInternal(outF, indent)
+    if writeExtra:
+      writeExtra(outF, indent=indent + 2)
     outF.write('\n' + (indent * ' ') + '}')
 
   def __repr__(self):
@@ -220,6 +231,8 @@ class MetaInfoBase(BaseModel):
         el = MetaSection(**dd)
       elif mtype == MetaType.type_dimension:
         el = MetaDimensionValue(**dd)
+      else:
+        raise Exception(f'unexpected type {mtype} in {d}')
     except:
       raise Exception(
         f"Failed to instantiate meta_info_entry of type {mtype} from {dd}")
@@ -353,11 +366,29 @@ class MetaDimension(BaseModel):
         ii=ii, comma=comma, value=jd(self.meta_dimension_symbolic)))
     outF.write("\n" + (indent * " ") + "}")
 
+  def __str__(self):
+    if self.meta_dimension_symbolic:
+      if self.meta_dimension_fixed is not None:
+        return f'<ERROR:{self.meta_dimension_fixed}&{self.meta_dimension_symbolic}>'
+      else:
+        return self.meta_dimension_symbolic
+    else:
+      return str(self.meta_dimension_fixed)
+
 
 class MetaDimensionValue(MetaInfoBase):
   meta_type = MetaType.type_dimension
   meta_data_type: Optional[MetaDataType]
   meta_parent_section: str
+
+  def allKeys(self):
+    return super().allKeys() + ['meta_data_type', 'meta_parent_section']
+
+  #@validator('meta_type')
+  def meta_type_correct(cls, v):
+    if v != MetaType.type_dimension:
+      raise ValidationError(
+        f'meta_type must be type-dimension for MetaDimensionValue')
 
   def writeInternal(self, outF, indent):
     ii = (indent + 2) * ' '
@@ -381,6 +412,18 @@ class MetaValue(MetaInfoBase):
   meta_query_enum: Optional[List[MetaQueryEnum]]
   meta_range_expected: Optional[List[MetaRange]]
   meta_units: Optional[str]
+
+  def allKeys(self):
+    return super().allKeys() + [
+      'meta_data_type', 'meta_parent_section', 'meta_repeats', 'meta_required',
+      'meta_referenced_section', 'meta_dimension', 'meta_default_value',
+      'meta_enum', 'meta_range_expected', 'meta_units'
+    ]
+
+  #@validator('meta_type')
+  def meta_type_correct(cls, v):
+    if v != MetaType.type_value:
+      raise ValidationError(f'meta_type must be type-value for MetaValue')
 
   def standardize(self, compact=False):
     super().standardize(compact=compact)
@@ -449,6 +492,25 @@ class MetaValue(MetaInfoBase):
         ii=ii, value=jd(self.meta_units)))
 
 
+class MetaInject(BaseModel):
+  meta_inject_if_abstract_type: Optional[List[str]]
+  meta_inject_if_section_regexp: Optional[str]
+
+  def write(self, outF, indent=0):
+    ii = (indent + 2) * ' '
+    outF.write('{')
+    comma = ''
+    if self.meta_inject_if_abstract_type:
+      outF.write('{comma}\n{ii}"meta_inject_if_abstract_type": {value}',
+                 format(ii=ii, value=jd(self.meta_inject_if_abstract_type)))
+      comma = ','
+    if self.meta_inject_if_section_regexp:
+      outF.write('{comma}\n{ii}"meta_inject_if_section_regexp": {value}'.
+                 format(ii=ii, value=jd(self.meta_inject_if_section_regexp)))
+      comma = ','
+    outF.write(f'\n{ii}}}')
+
+
 class MetaSection(MetaInfoBase):
   meta_type = MetaType.type_section
   meta_parent_section: Optional[str]
@@ -456,7 +518,18 @@ class MetaSection(MetaInfoBase):
   meta_required: bool = False
   meta_chosen_key: Optional[List[str]]
   meta_context_identifier: Optional[List[str]]
-  meta_contains: Optional[List[str]]
+  meta_inject: Optional[List[MetaInject]]
+
+  def allKeys(self):
+    return super().allKeys() + [
+      'meta_parent_section', 'meta_repeats', 'meta_required',
+      'meta_chosen_key', 'meta_context_identifier', 'meta_inject'
+    ]
+
+  #@validator('meta_type')
+  def meta_type_correct(cls, v):
+    if v != MetaType.type_section:
+      raise ValidationError(f'meta_type must be type-section for MetaSection')
 
   def writeInternal(self, outF, indent):
     ii = (indent + 2) * ' '
@@ -472,16 +545,33 @@ class MetaSection(MetaInfoBase):
     if self.meta_context_identifier:
       outF.write(',\n{ii}"meta_context_identifier": {value}'.format(
         ii=ii, value=jd(self.meta_context_identifier)))
-    if self.meta_contains:
-      outF.write(',\n{ii}"meta_contains": {value}'.format(
-        ii=ii, value=jd(self.meta_contains)))
+    if self.meta_inject:
+      outF.write(f',\n{ii}"meta_inject": [')
+      comma = ''
+      for i in self.meta_inject:
+        if comma:
+          outF.write(comma)
+        else:
+          comma = ', '
+        i.write(outF, indent=indent + 2)
+      oufF.write(' ]')
 
 
 class MetaAbstract(MetaInfoBase):
   meta_type = MetaType.type_abstract
 
+  #@validator('meta_type')
+  def meta_type_correct(cls, v):
+    if v != MetaType.type_abstract:
+      raise ValidationError(
+        f'meta_type must be type-abstract for MetaAbstract')
 
-MetaInfoEntry = Union[MetaDimensionValue, MetaValue, MetaSection, MetaAbstract]
+
+# Warning using this means that pydantic will try to initialize sequentially with the given types until one gives an error *even* if it is already one of the types of the union.
+# Thus unless extra validation is enabled a MetaAbstract might be converted in  MetaValue.
+# Extra validation breaks code reloading, and so nice development...
+# For these reasons it is currently unused.
+MetaInfoEntry = Union[MetaValue, MetaSection, MetaDimensionValue, MetaAbstract]
 
 
 class MetadictRequire(BaseModel):
@@ -505,8 +595,8 @@ class MetaDictionary(BaseModel):
   metadict_description: Union[str, List[str]]
   metadict_version: Optional[str]
   metadict_require: List[MetadictRequire] = []
-  meta_info_entry: List[MetaInfoEntry] = []
-  meta_info_entries_cache: Optional[Dict[str, List[MetaInfoEntry]]]
+  meta_info_entry: list = []  #List[MetaInfoEntry] = []
+  meta_info_entries_cache: Optional[Dict[str, list]]  #List[MetaInfoEntry]]]
 
   @property
   def meta_info_entries(self):
@@ -602,7 +692,7 @@ class MetaDictionary(BaseModel):
       os.makedirs(dir)
     writeFile(
       os.path.join(dir, "_.meta_dictionary.json"),
-      lambda fOut: self.write(fOut, writeMetaInfoEntries=False))
+      lambda outF: self.write(outF, writeMetaInfoEntries=False))
     present = {
       f
       for f in os.listdir(dir) if f.endswith('.meta_info_entry.json')
@@ -879,165 +969,4 @@ class MetaInfo(BaseModel):
     metaI.loadDictionariesStartingAtPath(
       dictPath=dictPath, extraPaths=extraPaths, loadAll=loadAll)
     return metaI
-
-
-class MetaSchemaSection(BaseModel):
-  dictionary: str
-  section: MetaSection
-  valueEntries: Dict[str, MetaValue]
-  injectedValues: Dict[str, MetaValue]
-  subSections: dict  #Dict[str,'MetaSchemaSection']
-  injectedSections: dict  #Dict[str,obj]# 'MetaSchemaSection']
-  dimensions: Dict[str, MetaDimensionValue]
-
-  def addSubsection(self, subsection):
-    """"""
-    existingSub = self.subSections.get(subsection.section.meta_name)
-    if not existingSub:
-      self.subSections[subsection.section.meta_name] = subsection
-    elif subsection.section == existingSub.section and subsection.dictionary == existingSub.dictionary:
-      raise Exception(
-        f'Duplicate add of section {subsection.section.meta_name} {subsection.dictionary}'
-      )
-    else:
-      raise Exception(
-        f'Duplicate section {subsection.section.meta_name} in {existingSub.dictionary} and {subsection.dictionary}: {existingSub.section} vs {subsection.section}'
-      )
-
-  def addDimension(self, dimension: MetaDimensionValue):
-    existingDim = self.dimensions.get(dimension.meta_name)
-    if not existingDim:
-      self.dimensions[dimension.meta_name] = dimension
-    elif dimension == existingDim:
-      raise Exception(f'Duplicate add of dimension {dimension}')
-    else:
-      raise Exception(
-        f'Duplicate dimension {dimension.meta_name}: {existingDim} vs {dimension}'
-      )
-
-  def addValue(self, value: MetaValue):
-    existing = self.valueEntries.get(value.meta_name)
-    if not existing:
-      self.valueEntries[value.meta_name] = value
-    elif value == existing:
-      raise Exception(f'Duplicate add of value {value}')
-    else:
-      raise Exception(
-        f'Duplicate dimension {value.meta_name}: {existing} vs {value}')
-
-
-class MetaSchema(BaseModel):
-  metaInfo: MetaInfo
-  mainDictionary: str
-  dictionaries: Set[str]
-  sections: Dict[str, MetaSchemaSection]
-  abstractTypes: Dict[str, MetaAbstract]
-  dimensions: Dict[str, MetaDimensionValue]
-
-  def findMany(self, metaName, metaType=None):
-    return self.metaInfo.findMany(metaName, metaType, self.dictionaries)
-
-  def findOne(self, metaName, metaType=None):
-    return self.metaInfo.findOne(metaName, metaType, self.dictionaries)
-
-  def ensureSection(self, sectionName):
-    """Ensures that the section with the given name is in the schema (and all its super sections), and returns the corresponding MetaSchemaSection"""
-    sAttName = sectionName
-    sectionPath = []
-    sectionPathNames = []
-    while sAttName:
-      if sAttName in sectionPathNames:
-        raise Exception(f'circular ref back to {sAttName} after {superDone}')
-      sAtt = self.metaInfo.findSection(
-        sAttName, dictionaryNames=self.dictionaries)
-      existingSection = self.sections.get(sAttName)
-      if not existingSection:
-        newSection = MetaSchemaSection(
-          dictionary=sAtt.metadict_name,
-          section=sAtt.meta_info_entry,
-          valueEntries={},
-          injectedSections={},
-          injectedValues={},
-          subSections={},
-          dimensions={})
-        self.sections[sAttName] = newSection
-        if sectionPath:
-          newSection.addSubsection(sectionPath[-1])
-        sectionPath.append(newSection)
-        sectionPathNames.append(sAttName)
-        sAttName = sAtt.meta_info_entry.meta_parent_section
-      else:
-        if sectionPath:
-          existingSection.addSubsection(sectionPath[-1])
-        sectionPath.append(existingSection)
-        break
-    return sectionPath[0]
-
-  def addSchemaOfDictionary(self, dict: MetaDictionary):
-    for entry in dict.meta_info_entry:
-      meta_type = entry.meta_type
-      if meta_type == MetaType.type_abstract:
-        existingEntry = self.abstractTypes.get(entry.meta_name)
-        if not existingEntry:
-          self.abstracyTypes[entry.meta_name] = entry
-        elif existingEntry != entry:
-          raise Exception(
-            f'Duplicated abstract type {entry.meta_name}: {entry} vs {existingEntry}'
-          )
-        else:
-          raise Exception(
-            f'Duplicated add of abstract type {entry.meta_name}')  # ignore?
-      elif meta_type == MetaType.type_dimension:
-        existingEntry = self.dimensions.get(entry.meta_name)
-        if not existingEntry:
-          self.abstracyTypes[entry.meta_name] = entry
-          self.ensureSection(entry.meta_parent_section).addDimension(entry)
-        elif existingEntry != entry:
-          raise Exception(
-            f'Duplicated dimension {entry.meta_name}: {entry} vs {existingEntry}'
-          )
-        else:
-          raise Exception(
-            f'Duplicated add of abstract type {entry.meta_name}')  # ignore
-      elif meta_type == MetaType.type_section:
-        self.ensureSection(entry.meta_name)
-      elif meta_type == MetaType.type_value:
-        sec = self.ensureSection(entry.meta_parent_section)
-        sec.addValue(entry)
-      else:
-        raise Exception(
-          f'Unexpected meta_type {meta_type} in entry {entry.meta_name} of dictionary {dict.metadict_name}'
-        )
-
-  def extendToDictionary(self, newDictName: str):
-    """Modifies this dictionary adding the missing dependencies of newDictName
-		The result is equivalent to forDictionary(newDictName) only if self.mainDictionary is in the dependencies of newDictName"""
-    newDeps = self.metaInfo.depsOfDict(newDictName)
-    oldDeps = self.dictionaries
-    toDo = newDeps
-    if oldDeps.difference(newDeps):
-      logging.warn(
-        f'extendending {self.mainDictionary} to {newDictName} that is not a superset will leave extra dictionaries in the schema'
-      )
-    self.dictionaries = self.dictionaries.union(newDeps)
-    self.mainDictionary = newDictName
-    for d in toDo:
-      dict = metaInfo.dictionaries[d]
-      self.addSchemaOfDictionary(dict)
-    return self
-
-  @classmethod
-  def forDictionary(cls, dictName: str, metaInfo: MetaInfo):
-    deps = metaInfo.depsOfDict(dictName)
-    schema = MetaSchema(
-      metaInfo=metaInfo,
-      mainDictionary=dictName,
-      dictionaries=deps,
-      sections={},
-      abstractTypes={},
-      dimensions={})
-    for dep in deps:
-      dict = metaInfo.dictionaries[dep]
-      schema.addSchemaOfDictionary(dict)
-    return schema
 
