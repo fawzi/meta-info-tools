@@ -74,15 +74,19 @@ def writeFile(targetPath, writer):
 
 def safeRemove(toRm):
   """moves the give files to a backup (unless they already are a backup (.bk))"""
-  for f in toRm:
-    if not f.endswith('.bk'):
+  for el in toRm:
+    if not os.path.exists(el):
+      logging.warn(f'cannot remove non existing {el}')
+    elif not el.endswith('.bk'):
+      timestamp=date.today().isoformat()
+      dir,f=os.path.split(el)
       t2 = os.path.join(dir, f + '.' + timestamp + '.bk')
       t3 = t2
       ii = 0
       while os.path.exists(t3):
         ii += 1
         t3 = os.path.join(dir, f'{f}.{timestamp}-{ii}.bk')
-      logging.warn('removing old file {f} (backup {t3})')
+      logging.warn(f'removing old file {f} (backup {t3})')
       os.replace(os.path.join(dir, f), t3)
 
 
@@ -364,6 +368,7 @@ class MetaDimension(BaseModel):
     if self.meta_dimension_symbolic:
       outF.write('{comma}\n{ii}"meta_dimension_symbolic": {value}'.format(
         ii=ii, comma=comma, value=jd(self.meta_dimension_symbolic)))
+      comma = ','
     outF.write("\n" + (indent * " ") + "}")
 
   def __str__(self):
@@ -502,11 +507,11 @@ class MetaInject(BaseModel):
     comma = ''
     if self.meta_inject_if_abstract_type:
       outF.write('{comma}\n{ii}"meta_inject_if_abstract_type": {value}',
-                 format(ii=ii, value=jd(self.meta_inject_if_abstract_type)))
+                 format(ii=ii, comma=comma, value=jd(self.meta_inject_if_abstract_type)))
       comma = ','
     if self.meta_inject_if_section_regexp:
       outF.write('{comma}\n{ii}"meta_inject_if_section_regexp": {value}'.
-                 format(ii=ii, value=jd(self.meta_inject_if_section_regexp)))
+                 format(ii=ii, comma=comma, value=jd(self.meta_inject_if_section_regexp)))
       comma = ','
     outF.write(f'\n{ii}}}')
 
@@ -518,12 +523,13 @@ class MetaSection(MetaInfoBase):
   meta_required: bool = False
   meta_chosen_key: Optional[List[str]]
   meta_context_identifier: Optional[List[str]]
+  meta_contains: Optional[List[str]]
   meta_inject: Optional[List[MetaInject]]
 
   def allKeys(self):
     return super().allKeys() + [
       'meta_parent_section', 'meta_repeats', 'meta_required',
-      'meta_chosen_key', 'meta_context_identifier', 'meta_inject'
+      'meta_chosen_key', 'meta_context_identifier', 'meta_contains', 'meta_inject'
     ]
 
   #@validator('meta_type')
@@ -545,6 +551,8 @@ class MetaSection(MetaInfoBase):
     if self.meta_context_identifier:
       outF.write(',\n{ii}"meta_context_identifier": {value}'.format(
         ii=ii, value=jd(self.meta_context_identifier)))
+    if self.meta_contains:
+    	outF.write(f',\n{ii}"meta_contains": {jd(self.meta_contains)}')
     if self.meta_inject:
       outF.write(f',\n{ii}"meta_inject": [')
       comma = ''
@@ -554,7 +562,7 @@ class MetaSection(MetaInfoBase):
         else:
           comma = ', '
         i.write(outF, indent=indent + 2)
-      oufF.write(' ]')
+      outF.write(' ]')
 
 
 class MetaAbstract(MetaInfoBase):
@@ -660,6 +668,7 @@ class MetaDictionary(BaseModel):
       comma = ','
     outF.write(
       '{comma}\n{ii}"metadict_description": '.format(ii=ii, comma=comma))
+    comma = ','
     writeStrMaybeList(outF, self.metadict_description, indent=indent + 2)
     if self.metadict_version is not None:
       outF.write(',\n{ii}"metadict_version": {value}'.format(
@@ -703,7 +712,7 @@ class MetaDictionary(BaseModel):
       written.add(fName)
       writeFile(os.path.join(dir, fName), lambda outF: el.write(outF))
     timestamp = date.today().isoformat()
-    safeRemove(present.difference(written))
+    safeRemove([os.path.join(dir,f) for f in present.difference(written)])
 
   @classmethod
   def fromDict(cls, d):
@@ -815,8 +824,8 @@ class MetaDictionary(BaseModel):
           raise Exception(f'Invalid json in {entryPath}')
       d['meta_name'] = d.get('meta_name', entryExpectedName)
       if d['meta_name'] != entryExpectedName:
-        logging.warn(
-          f'Inconsistent entry name from filename {entryExpectedName} vs {d["meta_name"]} in {entryPath}'
+        raise Exception(
+          f'Inconsistent entry name from filename {entryExpectedName} vs {d["meta_name"]} in {entryPath}, copy paste error?'
         )
       entries.append(d)
     entries.sort(key=lambda x: x.get('meta_name'))
@@ -827,7 +836,7 @@ class MetaDictionary(BaseModel):
       raise Exception(f'failure loading exploded dictionary at "{path}"')
 
   @classmethod
-  def loadAtPath(cls, path):
+  def loadAtPath(cls, path, name=None):
     """loads the dictionary at the given path (automatically detecting its type)"""
     if path.endswith('/') or os.path.basename(path) == '_.meta_dictionary.json':
       dPath = os.path.dirname(path)
@@ -842,6 +851,10 @@ class MetaDictionary(BaseModel):
       raise Exception(
         f'Do not know how to interpret file {path}, expected either a file *.meta_dictionary.json or  directory *.meta_dictionary'
       )
+    if name and d.metadict_name != name:
+      raise Exception(
+          f'Inconsistent name of dictionary {path}, expected {name}, got {d.metadict_name}'
+        )
 
 
 class MetaInfo(BaseModel):
@@ -898,7 +911,7 @@ class MetaInfo(BaseModel):
     """Ensures that all dependent dictionaries are loaded"""
     namesDone = set()
     while len(namesDone) < len(self.dictionaries):
-      for n, d in self.dictionaries.items():
+      for n, d in sorted(self.dictionaries.items()):
         if n not in namesDone:
           namesDone.add(n)
           for dep in d.metadict_require:
@@ -962,11 +975,12 @@ class MetaInfo(BaseModel):
           d = MetaDictionary.loadAtPath(os.path.join(basePath, f))
           self.addMetaDict(d)
     self.complete(loader)
+    return d
 
   @classmethod
   def withPath(cls, dictPath, extraPaths=None, loadAll=False):
     metaI = cls(dictionaries={}, metaNameInDicts={})
-    metaI.loadDictionariesStartingAtPath(
+    d=metaI.loadDictionariesStartingAtPath(
       dictPath=dictPath, extraPaths=extraPaths, loadAll=loadAll)
-    return metaI
+    return (metaI,d)
 

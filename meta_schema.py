@@ -21,7 +21,7 @@ class MetaSchemaSection(BaseModel):
   meta_path: Optional[str]
 
   def name(self):
-    return section.meta_name
+    return self.section.meta_name
 
   @property
   def meta_used_in_section(self):
@@ -102,7 +102,7 @@ class MetaSchemaSection(BaseModel):
     existing = self.valueEntries.get(value.meta_name)
     if not existing:
       self.valueEntries[value.meta_name] = value
-    elif value == existing.meta_info_entry:
+    elif value == existing:
       raise Exception(
         f'Duplicate add of value {value} from {self.dictionariesOf(value.metaName, metaType=MetaType.type_value)}'
       )
@@ -340,6 +340,9 @@ class ConcreteTypeDefiner(DataVisitor):
         self.knownTypes[secName] = KnownTypes(secName, secName)
       self.defineType(path, typeName=secName, superName=None, renames=renames)
 
+SectToInject = namedtuple('SectToInject', [
+  'sect', 'sectRegexp', 'requiredAbstract', 'excludedAbstract'
+])
 
 class MetaSchema(BaseModel):
   metaInfo: MetaInfo
@@ -471,7 +474,7 @@ class MetaSchema(BaseModel):
         self.visitDataPath([sec], visitor)
 
   def visitDataPath(self, path, visitor):
-    if not visitor.shoudVisitSection(path):
+    if not visitor.shouldVisitSection(path):
       return False
     secNow = path[-1]
     if secNow.valueEntries and visitor.shouldVisitValues(path):
@@ -481,9 +484,9 @@ class MetaSchema(BaseModel):
     res = False
     if secNow.subSections and visitor.shouldVisitSubsections(path):
       res = True
-      for sec in sorted(path[-1].subSections.items()):
+      for secName,sec in sorted(path[-1].subSections.items()):
         newPath = path + [sec]
-        self.visitPath(newPath, visitor)
+        self.visitDataPath(newPath, visitor)
       visitor.didVisitSubsections(path)
     visitor.didVisitSection(path)
 
@@ -514,7 +517,7 @@ class MetaSchema(BaseModel):
       if meta_type == MetaType.type_abstract:
         existingEntry = self.abstractTypes.get(entry.meta_name)
         if not existingEntry:
-          self.abstracyTypes[entry.meta_name] = MetaSchemaAbstract(
+          self.abstractTypes[entry.meta_name] = MetaSchemaAbstract(
             dictionary=dict.metadict_name,
             abstract_type=entry,
             sections=set(),
@@ -552,10 +555,6 @@ class MetaSchema(BaseModel):
           f'Unexpected meta_type {meta_type} in entry {entry.meta_name} of dictionary {dict.metadict_name}'
         )
 
-  SectToInject = namedtuple('SectToInject', [
-    'sect', 'sectRegexp', 'requiredAbstract', 'excludedAbstract'
-  ])
-
   def injectSections(self):
     """Injects the sections that need to be injected, cleans and recreates dataView from scratch"""
     injectable = [
@@ -570,7 +569,7 @@ class MetaSchema(BaseModel):
       raise Exception(
         f'Inject of non root sections {nonRootInject} not supported')
     for sToI in injectable:
-      for metaInject in sToI.meta_inject:
+      for metaInject in sToI.section.meta_inject:
         regexpStr = metaInject.meta_inject_if_section_regexp
         if regexpStr:
           regexpStr2 = r'\A(?:' + regexpStr + r')\Z'
@@ -644,7 +643,7 @@ class MetaSchema(BaseModel):
           )
         abNow.sections.add(secName)
       for vName, v in sec.valueEntries.items():
-        for aStr in v.meta_info_entry.meta_abstract_types:
+        for aStr in v.meta_abstract_types:
           abNow = self.abstractTypes.get(aStr)
           if not abNow:
             raise Exception(
@@ -716,7 +715,8 @@ class MetaSchema(BaseModel):
       sections={},
       abstractTypes={},
       dimensions={},
-      rootSections={})
+      rootSections={},
+      dataView={})
     for dep in deps:
       dict = metaInfo.dictionaries[dep]
       schema.addSchemaOfDictionary(dict)

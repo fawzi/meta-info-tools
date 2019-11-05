@@ -92,7 +92,8 @@ class TestMetaInfo(unittest.TestCase):
 	"meta_required": false,
 	"meta_chosen_key": ["key_val"],
 	"meta_context_identifier": ["key_val"],
-	"meta_contains": ["section_x","value_y"]
+	"meta_contains": ["section_x","value_y"],
+	"meta_inject":[{"meta_inject_if_section_regexp": "manual\\\\.inject"}]
 }"""
 
 	def doTests(self, dumpedStr,expectedClass):

@@ -4,7 +4,7 @@
 # version/ sections
 from meta_schema import MetaSchema
 from meta_info import MetaType, writeFile, safeRemove
-import io, re
+import io, re, os
 import markdown
 
 
@@ -146,6 +146,8 @@ class SiteWriter():
 	def __init__(self, schema, basePath):
 		self.schema = schema
 		self.basePath = basePath
+		if not os.path.isdir(basePath):
+			os.makedirs(basePath)
 		self.generatedPaths = {}
 
 	def addGeneratedPath(self, path):
