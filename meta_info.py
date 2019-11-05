@@ -170,7 +170,7 @@ class MetaInfoBase(BaseModel):
     ]
 
   def allSetKeys(self):
-    [x for x in self.allKeys() if getattr(x, None) is not None]
+    return [x for x in self.allKeys() if getattr(self, x, None) is not None]
 
   def standardize(self, compact=False):
     """Standardizes the values stored (mainly the description formatting)"""

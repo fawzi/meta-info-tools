@@ -66,8 +66,7 @@ class MetaSchemaSection(BaseModel):
   def isPartialSection(self):
     """if this section is a partial section that gets injected in other sections"""
     return not self.injectionBase and (
-      self.section.meta_inject_if_abstract_type or
-      self.meta_inject_if_section_regexp)
+      self.section.meta_inject)
 
   def isInjected(self):
     """If this section is an injected partial section"""

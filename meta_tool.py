@@ -141,7 +141,6 @@ def rewriteCmd(args):
 			logging.exception(f'Error rewriting {inF}')
 
 def docCmd(args):
-	print('extra_path', args.extra_path)
 	for inF in args.inPath:
 		try:
 			mInfo, d=MetaInfo.withPath(inF, extraPaths=args.extra_path)
@@ -195,7 +194,7 @@ if __name__ == '__main__':
 		help='target dir if not given defaults to the directory of the first argument +/doc')
 	parser_doc.add_argument('inPath', type=str, nargs='+',
 		help='a dictionary to document')
-	parser_doc.add_argument('--extra-path', type=str,
+	parser_doc.add_argument('--extra-path', type=str, action='append',
 	  help='extra path to load dependencies')
 	parser_doc.set_defaults(func=docCmd)
 	
