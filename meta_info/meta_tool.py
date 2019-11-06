@@ -2,10 +2,11 @@ import os
 from meta_info import MetaInfo, MetaDictionary, writeFile
 from meta_schema import MetaSchema
 from meta_html import SiteWriter
+from meta_check import doChecks, NameCheckLevel, ClashKinds
 import logging
 import shutil
 
-defaultBasePath=os.path.realpath(os.path.normpath(os.path.abspath(os.path.join(os.path.dirname(__file__),'../meta_info'))))
+defaultBasePath=os.path.realpath(os.path.normpath(os.path.abspath(os.path.join(os.path.dirname(__file__),'../../meta_info'))))
 
 def cleanDir(dir, maxDepth=4):
 	"""removes the backup (*.bk) files and directories from the path dir up to a depth of maxDepth""" 
@@ -152,9 +153,35 @@ def docCmd(args):
 				if inF.endswith('/') or os.path.basename(inF) == '_.meta_dictionary.json':
 					target_dir=os.path.normpath(os.path.join(target_dir,'..'))
 				target_dir=os.path.join(target_dir,'doc')
+			if args.delete_old_bk:
+				cleanDir(target_dir)
 			siteWriter=SiteWriter(schema, target_dir)			
 			siteWriter.writeAll()
 			siteWriter.cleanupUnknown()
+		except:
+			logging.exception(f'documenting {inF}')
+
+
+def checkCmd(args):
+	for inF in args.inPath:
+		try:
+			mInfo, d=MetaInfo.withPath(inF, extraPaths=args.extra_path)
+			schema=MetaSchema.forDictionary(dictName = d.metadict_name, metaInfo=mInfo)
+			clashMap={
+				'ignore-case': ClashKinds.IgnoreCase,
+				'ignore-underscores': ClashKinds.IgnoreUnderscores,
+				'val-and-dim-same-type': ClashKinds.ValAndDimSameType,
+				'ignore-parent-section': ClashKinds.IgnoreParentSection,
+				'ignore-type': ClashKinds.IgnoreType,
+				'ignore-all': ClashKinds.IgnoreAll
+			}
+			clashList=args.name_clashes
+			if len(clashList)>1:
+				clashList=clashList[1:]
+			clashKinds=0
+			for el in clashList:
+				clashKinds=clashKinds|clashMap[el].value
+			doChecks(schema, nameCheckLevel = args.name_check, clashKinds=clashKinds)			
 		except:
 			logging.exception(f'documenting {inF}')
 
@@ -187,6 +214,7 @@ if __name__ == '__main__':
 		help='set output format of the dictionary')
 	parser_r.add_argument('--compact', action='store_true',
 	help='is given stores all descriptions in a single string, not a list of strings.')
+	parser_r.add_argument('--delete-old-bk', action='store_true')
 	parser_r.set_defaults(func=rewriteCmd)
 	# create the parser for the "doc" command
 	parser_doc = subparsers.add_parser('doc', help='writes the documentation on the given dictionary')
@@ -196,12 +224,24 @@ if __name__ == '__main__':
 		help='a dictionary to document')
 	parser_doc.add_argument('--extra-path', type=str, action='append',
 	  help='extra path to load dependencies')
+	parser_doc.add_argument('--delete-old-bk', action='store_true')
 	parser_doc.set_defaults(func=docCmd)
-	
+	# create the parser for the "check" command
+	parser_check = subparsers.add_parser('check', help='Checks the given dictionary')
+	parser_check.add_argument('inPath', type=str, nargs='+',
+		help='a dictionary to document')
+	parser_check.add_argument('--extra-path', type=str, action='append',
+	  help='extra path to load dependencies')
+	parser_check.add_argument('--name-check', choices=list(NameCheckLevel), help='Constraints on the meta_name.\n strict: only lowercase ascii alphanumeric and underscore ([a-z_][a-zA-Z_]*);\n normal: ascii alphanumeric or underscore;\n weak: unicode alphanumerics and underscore',default=NameCheckLevel.strict)
+	parser_check.add_argument('--name-clashes', action='append', help='Kind of clashes between names that should be checked. It gives the things that should be ignored when comparing, several onew can be given, the default is to ignore all of the listed things (ignore-all) and thus just compare lowercase meta_name stripped of undercores',
+	default=["ignore-all"],
+	choices=['ignore-case', 'ignore-underscore', 'val-and-dim-same-type', 'ignore-parent-section', 'ignore-type', 'ignore-all'], nargs='+')
+	parser_check.set_defaults(func=checkCmd)	
 	#args=parser.parse_args(['rewrite', '../meta_info/meta_info_exploded/meta_schema.meta_dictionary'])
-	args=parser.parse_args(['cascade','--delete-old-bk'])
-	args=parser.parse_args(['doc', '../meta_info/meta_info_exploded/meta.meta_dictionary', '--extra-path', '../meta_info/meta_info/meta_dictionary'])
-	#args=parser.parse_args()
+	#args=parser.parse_args(['cascade','--delete-old-bk'])
+	#args=parser.parse_args(['doc', '../meta_info/meta_info_exploded/meta.meta_dictionary', '--extra-path', '../meta_info/meta_info/meta_dictionary'])
+	#args=parser.parse_args(['check', '../../meta_info/meta_info_exploded/meta_schema.meta_dictionary', '--extra-path', '../../meta_info/meta_info/meta_dictionary'])
+	args=parser.parse_args()
 	if not hasattr(args, 'func'):
 		parser.print_help()
 	else:
