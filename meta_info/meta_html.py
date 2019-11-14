@@ -178,7 +178,7 @@ class SiteWriter():
 	  <meta charset="utf-8">
 	  <title>{title}</title>
 	  <meta name="description" content="Meta info description">
-	  <meta name="author" content="SitePoint">
+	  <meta name="author" content="meta_tool">
 	  <link rel="stylesheet" href="{basePath}/css/metaStyle.css">
 	</head>
 	<body>
@@ -262,7 +262,7 @@ class SiteWriter():
 				if sName not in metaDone:
 					self.writeMetaNameRedirect(sName)
 					metaDone.add(sName)
-		for aName, a in sorted(self.abstractTypes.items()):
+		for aName, a in sorted(self.schema.abstractTypes.items()):
 			if aName not in metaDone:
 				self.writeMetaNameRedirect(aName)
 				metaDone.add(aName)
@@ -303,23 +303,23 @@ class SiteWriter():
 			body.append('</ul>\n')
 		return body
 
-	def writeIndex(self, basePath=None):
+	def writeMetaIndex(self, basePath=None):
 		p = os.path.join(self.basePath, 'meta_index.html')
-		with open(p, encoding='utf8') as outF:
-			for sName, s in sorted(self.schema.sections.items()):
-				outF.write('<ul class="index">\n')
-				outF.write(
-					f'<li class="index" id="IS-{sName}" ><label class="index"><a href="section/{sName}/index.html" target="detail" class="index">{sName}</label></a>\n'
-				)
-				for l in self.sectionIndex(outF, s, basePath):
-					ourF.write(l)
-				outF.write('</li>\n')
-			for aName, a in sorted(self.schema.abstractTypes.items()):
-				outF.write(
-					f'<li class="index" id="IA-{aName}"><label class="index"><a href="abstract/{aName}/index.html" target="detail" class="index">{aName}</a></label></li>\n'
-				)
-			outF.write('</ul>\n')
-			outF.flush()
+		body=[]
+		for sName, s in sorted(self.schema.sections.items()):
+			body.append('<ul class="index">\n')
+			body.append(
+				f'<li class="index" id="IS-{sName}" ><label class="index"><a href="section/{sName}/index.html" target="detail" class="index">{sName}</label></a>\n'
+			)
+			body += self.sectionIndex(s, basePath)
+			body.append('</li>\n')
+		for aName, a in sorted(self.schema.abstractTypes.items()):
+			body.append(
+				f'<li class="index" id="IA-{aName}"><label class="index"><a href="abstract/{aName}/index.html" target="detail" class="index">{aName}</a></label></li>\n'
+			)
+		body.append('</ul>\n')
+		self.writeLayout(targetPath=p, body=body, title="Meta Index", basePath=basePath)
+		
 
 	def writeCss(self):
 		p = os.path.join(self.basePath, 'css/metaStyle.css')
@@ -336,6 +336,7 @@ class SiteWriter():
 			''')
 			outF.flush()
 		writeFile(p, writer)
+		self.addGeneratedPath(p)
 
 	def breadcrumb(self, meta, basePath, target='detail', selfLink=True):
 		body = []
@@ -383,13 +384,13 @@ class SiteWriter():
 			sNow = ss.sections[metaName]
 			body += self.sectionIndex(sNow, basePath, subSections=True)
 		body.append(f'<div class="metaKey">meta_description</div>\n')
-		desc = md2html(meta.meta_description, schema=ss, basePath='..')
+		desc = md2html(meta.meta_description, schema=ss, basePath=basePath)
 		body.append(f'<div class="metaValue">{desc}</div>\n')
 		body.append(
 			f'<div class="metaKey">meta_abstract_types</div>\n<div class="metaValue">')
 		for refAName in meta.meta_abstract_types:
 			body.append(
-				f'  <span class="metaLink">{metaLink(self.abstractTypes[refAName].abstract_type)}</span>\n'
+				f'  <span class="metaLink">{metaLink(self.schema.abstractTypes[refAName].abstract_type,basePath=basePath)}</span>\n'
 			)
 		body.append(f'</div>')
 		body.append(f'<div class="metaValue">{desc}</div>\n')
@@ -406,19 +407,19 @@ class SiteWriter():
 			)
 		for k in keys.difference(handledKeys):
 			body.append(f'<dt class="metaValues">{k}</dt>\n')
-			body.append('<dd class="metaValues">{getattr(a,k)}</dd>\n')
+			body.append(f'<dd class="metaValues">{getattr(meta,k)}</dd>\n')
 		body.append('</dl>\n')
 		if mType == MetaType.type_abstract:
 			aType = self.schema.abstractTypes[metaName]
 			body.append(f'<h2>Uses</h2>\n')
 			hasUses = False
-			if aType.meta_used_in_section:
+			if aType.meta_used_in_sections:
 				body.append('<h3>Sections</h3>\n')
-				for sName in aType.meta_used_in_section:
+				for sName in aType.meta_used_in_sections:
 					body.append(metaLink(ss.sections[sName].section, basePath) + '\n')
-			if aType.meta_used_in_value:
+			if aType.meta_used_in_values:
 				body.append('<h3>Values</h3>\n')
-				for svName in aType.meta_used_in_value:
+				for svName in aType.meta_used_in_values:
 					names = svName.split('.')
 					if len(names) != 2:
 						raise Exception(f'value name should be section.value, found {svName}')
@@ -428,22 +429,22 @@ class SiteWriter():
 					body.append(
 						metaLink(sNow.section, basePath) + '.' + metaLink(
 							sNow.valueEntries[vName], basePath) + '\n')
-			if aType.meta_used_in_dimension:
+			if aType.meta_used_in_dimensions:
 				body.append('<h3>Dimensions</h3>\n')
-				for sdName in aType.meta_used_in_dimension:
+				for sdName in aType.meta_used_in_dimensions:
 					names = sdName.split('.')
 					if len(names) != 2:
 						raise Exception(
-							f'dimension name should be section.dimension, found {svName}')
+							f'dimension name should be section.dimension, found {sdName}')
 					sName = names[0]
 					dName = names[1]
 					sNow = ss.sections[sName]
 					body.append(
 						metaLink(sNow.section, basePath) + '.' + metaLink(
 							sNow.dimensions[dName], basePath) + '\n')
-			if aType.meta_used_in_abstract_type:
+			if aType.meta_used_in_abstract_types:
 				body.append('<h3>Abstract Types</h3>\n')
-				for aName in aType.meta_used_in_abstract_type:
+				for aName in aType.meta_used_in_abstract_types:
 					body.append(
 						metaLink(ss.abstractTypes[aName].abstract_type, basePath) + '\n')
 		if mType == MetaType.type_section:
@@ -451,9 +452,9 @@ class SiteWriter():
 			body.append(f'<h3>Pristine</h3>\n')
 			sects = sNow.meta_path.split('.')
 			rootSect = sects[0]
-			p = os.path.join(basePath, 'pristine/{rootSect}/index.html')
-			for i, v in enumerate(p):
-				ref = '.'.join(p[:i + 1])
+			p = os.path.join(basePath, f'pristine/{rootSect}/index.html')
+			for i, v in enumerate(sects):
+				ref = '.'.join(sects[:i + 1])
 				if i > 0:
 					body.append('.')
 				body.append(f'<a href="{p}#S_{ref}" target="data">{v}</a>')
@@ -467,9 +468,8 @@ class SiteWriter():
 							tNow[component] = {}
 						tNow = tNow[component]
 				fullRootsNames = set(ss.fullRootSections().keys())
-				roots = {cName: c for cName, c in tNow if cName in fullRootsNames}
-				nonRoots = {cName: c for cName, c in tNow if cName not in fullRootsNames}
-				p = os.path.join(basePath, 'data/{roots[0]}/index.html')
+				roots = {cName: c for cName, c in instantiateTree.items() if cName in fullRootsNames}
+				nonRoots = {cName: c for cName, c in instantiateTree.items() if cName not in fullRootsNames}
 
 				def addList(pathNow, levelNow):
 					if not levelNow:
@@ -477,10 +477,12 @@ class SiteWriter():
 					body.append('<ul class="instantiations">')
 					for elName, sub in sorted(levelNow.items()):
 						pathNew = pathNow + [elName]
+						p = os.path.join(basePath, f'data/{pathNew[0]}/index.html')
 						dottedPath = '.'.join(pathNew)
 						body.append(
-							f'<li><a href="{p}#S_{dottedPath}" target="data">{elName}</a></li>')
+							f'<li><a href="{p}#S_{dottedPath}" target="data">{elName}</a>')
 						addList(pathNew, sub)
+						body.append('</li>')
 					body.append('</ul>')
 
 				body.append(f'<h3>Root</h3>\n')
@@ -527,18 +529,18 @@ class SiteWriter():
 		self.writeLayout(p, body=self.sectionsIndex(), basePath='..', title='Sections Index')
 		for sName, s in sorted(self.schema.sections.items()):
 			basePath = '../..'
-			p = os.path.join(self.basePath, 'section/{sName}/index.html')
+			p = os.path.join(self.basePath, f'section/{sName}/index.html')
 			sec = s.section
 			body = self.metaDesc(sec, basePath=basePath)
 			self.writeLayout(p, body=body, title=f'Section {sName}', basePath=basePath)
 			for vName, v in s.valueEntries.items():
 				basePath = '../../..'
-				p = os.path.join(self.basePath, 'section/{sName}/value/{vName}.html')
+				p = os.path.join(self.basePath, f'section/{sName}/value/{vName}.html')
 				body = self.metaDesc(v, basePath=basePath)
 				self.writeLayout(p, body=body, title=f'Value {sName}', basePath=basePath)
 			for dName, d in s.dimensions.items():
 				basePath = '../../..'
-				p = os.path.join(self.basePath, 'section/{sName}/dimension/{dName}.html')
+				p = os.path.join(self.basePath, f'section/{sName}/dimension/{dName}.html')
 				body = self.metaDesc(d, basePath=basePath)
 				self.writeLayout(
 					p, body=body, title=f'Dimension {sName}', basePath=basePath)
@@ -594,22 +596,30 @@ class SiteWriter():
 				f'<h1>{sName} pristine data view</h1>\n<ul class="index">\n')
 			self.schema.visitDataPath([s], dumper)
 			dumper.body.append(f'</ul>\n')
-			self.writeLayout(p, body=dumper.body, title='Pristine Data {sName}', basePath='../..')
+			self.writeLayout(p, body=dumper.body, title=f'Pristine Data {sName}', basePath='../..')
 	
 	def writeIndex(self):
 		"writes the main index"
 		body=['<iframe src="meta_index.html" height="400" width="150" name="index"></iframe> <iframe src="meta_index.html" height="300" width="20" name="index"></iframe> <br>\n<iframe src="data/index.html" name="data"></iframe>\n']
 		p=os.path.join(self.basePath,'index.html')
 		self.writeLayout(p, body, title='Index', basePath='.')
+	
+	def writeMetaSchema(self):
+		"Writes out the meta_schema in json format"
+		p=os.path.join(self.basePath, "meta_schema.json")
+		writeFile(p, self.schema.write)
+		self.addGeneratedPath(p)
 
 	def writeAll(self):
 		"Writes out the whole site"
+		self.writeMetaIndex()
 		self.writeCss()
 		self.writeAbstract()
 		self.writeSection()
 		self.writeData()
 		self.writePristine()
 		self.writeIndex()
+		self.writeMetaSchema()
 	
 	def cleanupUnknown(self, pathNow=None, dirNow=None):
 		"""safely removes unknown files (likely leftover of old versions) renaming them to *.bk files/direcories"""

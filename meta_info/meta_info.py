@@ -78,15 +78,15 @@ def safeRemove(toRm):
     if not os.path.exists(el):
       logging.warn(f'cannot remove non existing {el}')
     elif not el.endswith('.bk'):
-      timestamp=date.today().isoformat()
-      dir,f=os.path.split(el)
+      timestamp = date.today().isoformat()
+      dir, f = os.path.split(el)
       t2 = os.path.join(dir, f + '.' + timestamp + '.bk')
       t3 = t2
       ii = 0
       while os.path.exists(t3):
         ii += 1
         t3 = os.path.join(dir, f'{f}.{timestamp}-{ii}.bk')
-      logging.warn(f'removing old file {f} (backup {t3})')
+      logging.info(f'removing old file {f} (backup to {t3})')
       os.replace(os.path.join(dir, f), t3)
 
 
@@ -155,6 +155,16 @@ class MetaType(Enum):
   type_section = "type-section"
 
 
+class EntryId(BaseModel):
+  "Unique identifier for a meta_info_entry"
+  meta_type: MetaType
+  meta_name: str
+  qualifier: str
+
+  def __str__(self):
+    return f'{self.meta_type.value}:{self.qualifier}{self.meta_name}'
+
+
 class MetaInfoBase(BaseModel):
   """Base values for all meta infos"""
   meta_name: str
@@ -171,6 +181,14 @@ class MetaInfoBase(BaseModel):
 
   def allSetKeys(self):
     return [x for x in self.allKeys() if getattr(self, x, None) is not None]
+
+  def entryId(self):
+    qualifier = ''
+    if self.meta_type != MetaType.type_section and 'meta_parent_section' in self.allSetKeys(
+    ):
+      qualifier = self.meta_parent_section + '.'
+    return EntryId(
+      meta_type=self.meta_type, qualifier=qualifier, meta_name=self.meta_name)
 
   def standardize(self, compact=False):
     """Standardizes the values stored (mainly the description formatting)"""
@@ -507,11 +525,15 @@ class MetaInject(BaseModel):
     comma = ''
     if self.meta_inject_if_abstract_type:
       outF.write('{comma}\n{ii}"meta_inject_if_abstract_type": {value}',
-                 format(ii=ii, comma=comma, value=jd(self.meta_inject_if_abstract_type)))
+                 format(
+                   ii=ii,
+                   comma=comma,
+                   value=jd(self.meta_inject_if_abstract_type)))
       comma = ','
     if self.meta_inject_if_section_regexp:
-      outF.write('{comma}\n{ii}"meta_inject_if_section_regexp": {value}'.
-                 format(ii=ii, comma=comma, value=jd(self.meta_inject_if_section_regexp)))
+      outF.write(
+        '{comma}\n{ii}"meta_inject_if_section_regexp": {value}'.format(
+          ii=ii, comma=comma, value=jd(self.meta_inject_if_section_regexp)))
       comma = ','
     outF.write(f'\n{ii}}}')
 
@@ -529,7 +551,8 @@ class MetaSection(MetaInfoBase):
   def allKeys(self):
     return super().allKeys() + [
       'meta_parent_section', 'meta_repeats', 'meta_required',
-      'meta_chosen_key', 'meta_context_identifier', 'meta_contains', 'meta_inject'
+      'meta_chosen_key', 'meta_context_identifier', 'meta_contains',
+      'meta_inject'
     ]
 
   #@validator('meta_type')
@@ -552,7 +575,7 @@ class MetaSection(MetaInfoBase):
       outF.write(',\n{ii}"meta_context_identifier": {value}'.format(
         ii=ii, value=jd(self.meta_context_identifier)))
     if self.meta_contains:
-    	outF.write(f',\n{ii}"meta_contains": {jd(self.meta_contains)}')
+      outF.write(f',\n{ii}"meta_contains": {jd(self.meta_contains)}')
     if self.meta_inject:
       outF.write(f',\n{ii}"meta_inject": [')
       comma = ''
@@ -712,7 +735,7 @@ class MetaDictionary(BaseModel):
       written.add(fName)
       writeFile(os.path.join(dir, fName), lambda outF: el.write(outF))
     timestamp = date.today().isoformat()
-    safeRemove([os.path.join(dir,f) for f in present.difference(written)])
+    safeRemove([os.path.join(dir, f) for f in present.difference(written)])
 
   @classmethod
   def fromDict(cls, d):
@@ -853,8 +876,8 @@ class MetaDictionary(BaseModel):
       )
     if name and d.metadict_name != name:
       raise Exception(
-          f'Inconsistent name of dictionary {path}, expected {name}, got {d.metadict_name}'
-        )
+        f'Inconsistent name of dictionary {path}, expected {name}, got {d.metadict_name}'
+      )
 
 
 class MetaInfo(BaseModel):
@@ -918,7 +941,7 @@ class MetaInfo(BaseModel):
             name = dep.metadict_required_name
             if name not in self.dictionaries:
               newD = loadDictNamed(name)
-              self.dictionaries[name] = newD
+              self.addMetaDict(newD)
             version = self.dictionaries[name].metadict_version
             expectedVersion = dep.metadict_required_version
             if expectedVersion and expectedVersion != version:
@@ -980,7 +1003,7 @@ class MetaInfo(BaseModel):
   @classmethod
   def withPath(cls, dictPath, extraPaths=None, loadAll=False):
     metaI = cls(dictionaries={}, metaNameInDicts={})
-    d=metaI.loadDictionariesStartingAtPath(
+    d = metaI.loadDictionariesStartingAtPath(
       dictPath=dictPath, extraPaths=extraPaths, loadAll=loadAll)
-    return (metaI,d)
+    return (metaI, d)
 

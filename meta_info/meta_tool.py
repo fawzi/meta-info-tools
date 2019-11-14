@@ -2,7 +2,7 @@ import os
 from meta_info import MetaInfo, MetaDictionary, writeFile
 from meta_schema import MetaSchema
 from meta_html import SiteWriter
-from meta_check import doChecks, NameCheckLevel, ClashKinds
+from meta_check import doChecks, NameCheckLevel, ClashKinds, ClashException
 import logging
 import shutil
 
@@ -10,14 +10,14 @@ defaultBasePath=os.path.realpath(os.path.normpath(os.path.abspath(os.path.join(o
 
 def cleanDir(dir, maxDepth=4):
 	"""removes the backup (*.bk) files and directories from the path dir up to a depth of maxDepth""" 
-	if maxDepth <= 0:
+	if maxDepth <= 0 or not os.path.exists(dir):
 		return
 	for dFile in os.listdir(dir):
 		dPath=os.path.join(dir, dFile)
 		if os.path.isdir(dPath):
 			if dFile.endswith('.bk'):
 				try:
-					shutils.rmtree(dPath)
+					shutil.rmtree(dPath)
 				except:
 					logging.exception(f"error cleaning up {dPath}")
 			else:
@@ -25,10 +25,11 @@ def cleanDir(dir, maxDepth=4):
 		elif dFile.endswith('.bk'):
 			try:
 				os.remove(dPath)
+				logging.info(f'Removed old backup {dPath}')
 			except:
 				logging.exception(f"error cleaning up {dPath}")
 
-def cascade(explodedDir, dictionaryDir, docsDir, deleteOldBk=False):
+def cascade(explodedDir, dictionaryDir, docsDir, args, deleteOldBk=False, continueOnError=True):
 	"""Reformats and propagate from exploded to single file dictionaries"""
 	explodedDone=set()
 	dictDone=set()
@@ -62,7 +63,10 @@ def cascade(explodedDir, dictionaryDir, docsDir, deleteOldBk=False):
 					writeFile(dPath, lambda f: d.write(f))
 					dictDone.add(d.metadict_name)
 			except:
-				logging.exception(f'Error handling {dFile}')
+				if continueOnError:
+					logging.exception(f'Error handling {dFile}')
+				else:
+					raise Exception(f'Error handling {dFile}')
 	if dictionaryDir:
 		for dFile in os.listdir(dictionaryDir):
 			try:
@@ -81,7 +85,20 @@ def cascade(explodedDir, dictionaryDir, docsDir, deleteOldBk=False):
 					if name != d.metadict_name:
 						safeRemove([dPath])
 			except:
-				logging.exception(f'Error handling {dFile}')
+				if continueOnError:
+					logging.exception(f'Error handling {dFile}')
+				else:
+					raise Exception(f'Error handling {dFile}')
+	# do checks
+	for dName,d in sorted(mInfo.dictionaries.items()):
+		try:
+			schema=MetaSchema.forDictionary(dName, mInfo)
+			checkWithArgs(schema, args)
+		except:
+				if continueOnError:
+					logging.exception(f'Failure when checking dictionary {dName}.')
+				else:
+					raise Exception(f'Failure when checking dictionary {dName}.')
 	if docsDir:
 		indexBody=['<h1>Documentation for dictionaries</h1>\n<ul class="index">\n']
 		regenPaths=[]
@@ -89,6 +106,7 @@ def cascade(explodedDir, dictionaryDir, docsDir, deleteOldBk=False):
 		for dName,d in sorted(mInfo.dictionaries.items()):
 			try:
 				schema=MetaSchema.forDictionary(dName, mInfo)
+				
 				targetDir=os.path.join(docsDir,dName)
 				siteWriter=SiteWriter(schema, targetDir)
 				siteWriter.writeAll()
@@ -99,7 +117,7 @@ def cascade(explodedDir, dictionaryDir, docsDir, deleteOldBk=False):
 				logging.exception(f'Failure when generating documentation for dictionary {dName}.')
 		indexBody.append('</ul>\n')
 		if siteWriter:
-			siteWriter.resetToDir(docsDir)
+			siteWriter.resetToPath(docsDir)
 			if regenPaths:
 				for d in regenPaths:
 					siteWriter.addGeneratedPath(d)
@@ -114,7 +132,7 @@ def cascadeCmd(args):
 		args.exploded_directory=os.path.join(args.base_directory, "meta_info_exploded")
 		args.dict_directory=os.path.join(args.base_directory,"meta_info/meta_dictionary")
 		args.docs_directory=os.path.join(args.base_directory,"docs")
-	cascade(args.exploded_directory, args.dict_directory, args.docs_directory, deleteOldBk=args.delete_old_bk)
+	cascade(args.exploded_directory, args.dict_directory, args.docs_directory, deleteOldBk=args.delete_old_bk, continueOnError=args.continue_on_error, args=args)
 
 
 def rewriteCmd(args):
@@ -161,36 +179,82 @@ def docCmd(args):
 		except:
 			logging.exception(f'documenting {inF}')
 
+def checkWithArgs(schema, args):
+	"""checks the given schema with the options given in args"""
+	clashMap={
+		'ignore-case': ClashKinds.IgnoreCase,
+		'ignore-underscores': ClashKinds.IgnoreUnderscores,
+		'unique-section-attributes': ClashKinds.UniqueSectionAttributes,
+		'ignore-parent-section': ClashKinds.IgnoreParentSection,
+		'ignore-type': ClashKinds.IgnoreType,
+		'ignore-all': ClashKinds.IgnoreAll
+	}
+	clashList=args.name_clashes
+	if len(clashList)>2:
+		clashList=clashList[2:]
+	clashKinds=0
+	for el in clashList:
+		clashKinds=clashKinds|clashMap[el].value
+	clashList=args.name_clashes_warn
+	if len(clashList)>1:
+		clashList=clashList[1:]
+	clashWarn=0
+	for el in clashList:
+		clashWarn=clashWarn|clashMap[el].value
+	doChecks(schema, nameCheckLevel = args.name_check, clashKinds=clashKinds)
+	try:
+		doChecks(schema, nameCheckLevel = args.name_check, clashKinds=clashWarn)
+	except ClashException as err:
+		clashes="\n  ".join([str(e) for e in err.clashes])
+		logging.warn(f'Discouraged name clashes detected in schema for dictionary {schema.mainDictionary}:\n  {clashes}')
 
 def checkCmd(args):
-	for inF in args.inPath:
+	for path in args.inPath:
 		try:
-			mInfo, d=MetaInfo.withPath(inF, extraPaths=args.extra_path)
+			mInfo, d=MetaInfo.withPath(path, extraPaths=args.extra_path)
 			schema=MetaSchema.forDictionary(dictName = d.metadict_name, metaInfo=mInfo)
-			clashMap={
-				'ignore-case': ClashKinds.IgnoreCase,
-				'ignore-underscores': ClashKinds.IgnoreUnderscores,
-				'val-and-dim-same-type': ClashKinds.ValAndDimSameType,
-				'ignore-parent-section': ClashKinds.IgnoreParentSection,
-				'ignore-type': ClashKinds.IgnoreType,
-				'ignore-all': ClashKinds.IgnoreAll
-			}
-			clashList=args.name_clashes
-			if len(clashList)>1:
-				clashList=clashList[1:]
-			clashKinds=0
-			for el in clashList:
-				clashKinds=clashKinds|clashMap[el].value
-			doChecks(schema, nameCheckLevel = args.name_check, clashKinds=clashKinds)			
 		except:
-			logging.exception(f'documenting {inF}')
+			logging.exception(f'Checking {path}')			
+		else:
+			checkWithArgs(schema, args)
+
+def checkArgs(parser):
+	"Adds the arguments for the checks to an argparse parser" 
+	parser.add_argument('--extra-path', type=str, action='append',
+	  help='extra path to load dependencies')
+	parser.add_argument('--name-check', choices=list(NameCheckLevel), help='Constraints on the meta_name.\n strict: only lowercase ascii alphanumeric and underscore ([a-z_][a-zA-Z_]*);\n normal: ascii alphanumeric or underscore;\n weak: unicode alphanumerics and underscore',default=NameCheckLevel.strict)
+	parser.add_argument('--name-clashes', action='append', help='Kind of clashes between names that should be checked. It gives the things that should be ignored when comparing, several onew can be given, the default is to ignore all of the listed things (ignore-all) and thus just compare lowercase meta_name stripped of undercores',
+	default=['ignore-case', 'unique-section-attributes'],
+	choices=['ignore-case', 'ignore-underscores', 'unique-section-attributes', 'ignore-parent-section', 'ignore-type', 'ignore-all'], nargs='+')
+	parser.add_argument('--name-clashes-warn', action='append', help='Kind of clashes between names that should be checked. It gives the things that should be ignored when comparing, several onew can be given, the default is to ignore all of the listed things (ignore-all) and thus just compare lowercase meta_name stripped of undercores',
+	default=["ignore-all"],
+	choices=['ignore-case', 'ignore-underscore', 'unique-section-attributes', 'ignore-parent-section', 'ignore-type', 'ignore-all'], nargs='+')
+
 
 if __name__ == '__main__':
-	logging.getLogger().setLevel(logging.INFO)
+	import tempfile, sys
+	logger=logging.getLogger()
+	tmpfile=tempfile.NamedTemporaryFile(delete=False, prefix='meta-', suffix='.log', encoding='utf8', mode='w')
+	tmpfile.close()
+	fh=logging.FileHandler(filename=tmpfile.name, mode='w', encoding='utf8')
+	fh.setLevel(logging.DEBUG)
+	df=logging.Formatter(fmt='%(asctime)s %(name)-12s %(levelname)-8s %(message)s', datefmt='%m-%d %H:%M')
+	fh.setFormatter(df)
+	while logger.hasHandlers():
+		logger.removeHandler(logger.handlers[0])
+	logger.setLevel(logging.DEBUG)
+	logger.addHandler(fh)
+	# define a Handler which writes INFO messages or higher to the sys.stderr
+	console = logging.StreamHandler()
+	consolef=logging.Formatter(fmt='%(levelname)-8s %(message)s')
+	console.setFormatter(consolef)
+	console.setLevel(logging.INFO)
+	logger.addHandler(console)
+	logging.info(f'Detailed log to {tmpfile.name}')
 	import argparse	
-	
 	# create the top-level parser
 	parser = argparse.ArgumentParser(prog='meta_tool')
+	parser.add_argument('--verbose', help='increases the logging level', action='store_true')
 	subparsers = parser.add_subparsers(help='sub-command help')
 	# create the parser for the "cascade" command
 	parser_cascade = subparsers.add_parser('cascade', help='reformat and propagate changes from exploded to single file dictionaries')
@@ -201,8 +265,10 @@ if __name__ == '__main__':
 	parser_cascade.add_argument('--dict-directory', type=str,
 		help='path to the directory with the .meta_dictionary.json dictionaries')
 	parser_cascade.add_argument('--delete-old-bk', action='store_true')
+	parser_cascade.add_argument('--continue-on-error', action='store_true')
 	parser_cascade.add_argument('--docs-directory', type=str,
 		help='path to the directory where to generate the documentation on the dictionaries')
+	checkArgs(parser_cascade)
 	parser_cascade.set_defaults(func=cascadeCmd)
 	# create the parser for the "rewrite" command
 	parser_r = subparsers.add_parser('rewrite', help='rewrites a dictionary possibly changing its format')
@@ -230,18 +296,15 @@ if __name__ == '__main__':
 	parser_check = subparsers.add_parser('check', help='Checks the given dictionary')
 	parser_check.add_argument('inPath', type=str, nargs='+',
 		help='a dictionary to document')
-	parser_check.add_argument('--extra-path', type=str, action='append',
-	  help='extra path to load dependencies')
-	parser_check.add_argument('--name-check', choices=list(NameCheckLevel), help='Constraints on the meta_name.\n strict: only lowercase ascii alphanumeric and underscore ([a-z_][a-zA-Z_]*);\n normal: ascii alphanumeric or underscore;\n weak: unicode alphanumerics and underscore',default=NameCheckLevel.strict)
-	parser_check.add_argument('--name-clashes', action='append', help='Kind of clashes between names that should be checked. It gives the things that should be ignored when comparing, several onew can be given, the default is to ignore all of the listed things (ignore-all) and thus just compare lowercase meta_name stripped of undercores',
-	default=["ignore-all"],
-	choices=['ignore-case', 'ignore-underscore', 'val-and-dim-same-type', 'ignore-parent-section', 'ignore-type', 'ignore-all'], nargs='+')
+	checkArgs(parser_check)
 	parser_check.set_defaults(func=checkCmd)	
 	#args=parser.parse_args(['rewrite', '../meta_info/meta_info_exploded/meta_schema.meta_dictionary'])
 	#args=parser.parse_args(['cascade','--delete-old-bk'])
-	#args=parser.parse_args(['doc', '../meta_info/meta_info_exploded/meta.meta_dictionary', '--extra-path', '../meta_info/meta_info/meta_dictionary'])
-	#args=parser.parse_args(['check', '../../meta_info/meta_info_exploded/meta_schema.meta_dictionary', '--extra-path', '../../meta_info/meta_info/meta_dictionary'])
+	#args=parser.parse_args(['doc', '../../meta_info/meta_info_exploded/common.meta_dictionary', '--extra-path', '../../meta_info/meta_info/meta_dictionary', '--delete-old-bk'])
+	#args=parser.parse_args(['check', '../../meta_info/meta_info_exploded/common.meta_dictionary', '--extra-path', '../../meta_info/meta_info/meta_dictionary'])
 	args=parser.parse_args()
+	if not args.verbose:
+		console.setLevel(logging.WARN)
 	if not hasattr(args, 'func'):
 		parser.print_help()
 	else:

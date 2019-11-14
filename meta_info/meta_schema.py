@@ -24,16 +24,8 @@ class MetaSchemaSection(BaseModel):
     return self.section.meta_name
 
   @property
-  def meta_used_in_section(self):
+  def meta_sub_section_name(self):
     return sorted(self.subSections.keys())
-
-  @property
-  def meta_used_in_values(self):
-    return [f"{sName}.{vName}" for vName in sorted(self.valueEntries.keys())]
-
-  @property
-  def meta_used_in_dimensions(self):
-    return [f"{sName}.{vName}" for vName in sorted(self.dimensions.keys())]
 
   @property
   def meta_instantiated_at(self):
@@ -45,70 +37,137 @@ class MetaSchemaSection(BaseModel):
     def writeExtra(outF, indent):
       """Writes out the extra schema related info"""
       ii = indent * ' '
-      sName = self.section.meta_name
-      outF.write(f',\n{ii}"meta_schema_entry_info": {{')
-      outF.write(f',\n{ii}  "meta_schema_entry_main_dictionary": {value}'.
-                 format(ii=ii, value=jd(schema.mainDictionary)))
-      outF.write(f',\n{ii}  "meta_path": {value}'.format(
-        ii=ii, value=jd(self.meta_path)))
-      outF.write(f',\n{ii}  "meta_used_in_section": {value}'.format(
-        ii=ii, value=jd(self.meta_used_in_section)))
-      outF.write(f',\n{ii}  "meta_used_in_values": {value}'.format(
-        ii=ii, value=jd(self.meta_used_in_values)))
-      outF.write(f',\n{ii}  "meta_used_in_dimensions": {value}'.format(
-        ii=ii, value=jd(self.meta_used_in_dimensions)))
-      outF.write(f',\n{ii}  "meta_instantiated_at": {value}'.format(
-        ii=ii, value=jd(self.meta_instantiated_at)))
-      outF.write(',\n{ii}}}')
+      outF.write(
+        ',\n{ii}"meta_path": {value}'.format(ii=ii, value=jd(self.meta_path)))
+      outF.write(',\n{ii}"meta_source_dictionary": {value}'.format(
+        ii=ii, value=jd(self.dictionary)))
 
-    self.section.write(outF, indent=intent, writeExtra=writeExtra)
+    ii = indent * ' '
+    sName = self.section.meta_name
+    outF.write(f'{{\n{ii}  "meta_info_entry": [')
+    self.section.write(outF, indent=indent + 4, writeExtra=writeExtra)
+    outF.write('],\n{ii}  "meta_sub_section_name": {value}'.format(
+      ii=ii, value=jd(self.meta_sub_section_name)))
+    outF.write(f',\n{ii}  "meta_value": [')
+    comma = ''
+    for vName, v in sorted(self.valueEntries.items()):
+      outF.write(f'{comma}{{\n{ii}    "meta_info_entry": [')
+      comma = ', '
+
+      def writeExtraValue(outF, indent):
+        ii = indent * ' '
+        outF.write(',\n{ii}"meta_path": {value}'.format(
+          ii=ii, value=jd(self.meta_path + '.' + vName)))
+        dicts = [
+          el.metadict_name
+          for el in schema.findMany(vName, MetaType.type_value)
+          if el.meta_info_entry.meta_parent_section == sName
+        ]
+        if len(dicts) != 1:
+          raise Exception(
+            f'Expected exactly one entry of type value with meta_name {vName} and meta_parent_section {sName}, but got {dicts}'
+          )
+        outF.write(',\n{ii} "meta_source_dictionary": {value}'.format(
+          ii=ii, value=jd(dicts[0])))
+
+      v.write(outF, indent=indent + 4, writeExtra=writeExtraValue)
+      outF.write(f']\n{ii}  }}')
+    outF.write(f' ]')
+
+    outF.write(f',\n{ii}  "meta_dimension_value": [')
+    comma = ''
+    for vName, v in sorted(self.dimensions.items()):
+      outF.write(f'{comma}{{\n{ii}    "meta_info_entry": [')
+      comma = ', '
+
+      def writeExtraDim(outF, indent):
+        ii = indent * ' '
+        outF.write(',\n{ii}"meta_path": {value}'.format(
+          ii=ii, value=jd(self.meta_path + '.' + vName)))
+        dicts = [
+          el.metadict_name
+          for el in schema.findMany(vName, MetaType.type_dimension)
+          if el.meta_info_entry.meta_parent_section == sName
+        ]
+        if len(dicts) != 1:
+          raise Exception(
+            f'Expected exactly one entry of type dimension with meta_name {vName} and meta_parent_section {sName}, but got several in the following dictionaries {dicts}'
+          )
+        outF.write(',\n{ii}  "meta_source_dictionary": {value}'.format(
+          ii=ii, value=jd(dicts[0])))
+
+      v.write(outF, indent=indent + 4, writeExtra=writeExtraDim)
+      outF.write(f']\n{ii}  }}')
+    outF.write(f' ]')
+    comma = ''
+    outF.write(f',\n{ii}  "meta_instantiated_at": [')
+    for el in self.meta_instantiated_at:
+      outF.write(f'{comma}\n{ii}    {jd(el)}')
+      if not comma:
+        comma = ', '
+    outF.write(f']\n{ii}}}')
 
   def isPartialSection(self):
     """if this section is a partial section that gets injected in other sections"""
-    return not self.injectionBase and (
-      self.section.meta_inject)
+    return not self.injectionBase and (self.section.meta_inject)
 
   def isInjected(self):
     """If this section is an injected partial section"""
     return bool(self.injectionBase)
 
-  def addSubsection(self, subsection):
+  def addSubsection(self, subsection, schema):
     """Adds the given subsection to this section"""
     existingSub = self.subSections.get(subsection.section.meta_name)
     if not existingSub:
       self.subSections[subsection.section.meta_name] = subsection
-    elif subsection.section == existingSub.section and subsection.dictionary == existingSub.dictionary:
-      raise Exception(
-        f'Duplicate add of section {subsection.section.meta_name} {subsection.dictionary}'
-      )
     else:
-      raise Exception(
-        f'Duplicate section {subsection.section.meta_name} in {existingSub.dictionary} and {subsection.dictionary}: {existingSub.section} vs {subsection.section}'
-      )
+      if schema:
+        dicts=schema.dictionariesOf(subsection.section.meta_name, metaType=MetaType.type_section)
+      else:
+        dicts=[]
+      if subsection.section == existingSub.section and subsection.dictionary == existingSub.dictionary:
+        raise Exception(
+        f'Duplicate add of section {subsection.section.meta_name} from dictionary {subsection.dictionary} (known dictionaries {dicts})'
+        )
+      else:
+        raise Exception(
+        f'Duplicate section {subsection.section.meta_name} in {existingSub.dictionary} and {subsection.dictionary}: {existingSub.section} vs {subsection.section} (dictionaries:{dicts})'
+        )
 
-  def addDimension(self, dimension: MetaDimensionValue):
+  def addDimension(self, dimension: MetaDimensionValue, schema):
     existingDim = self.dimensions.get(dimension.meta_name)
     if not existingDim:
       self.dimensions[dimension.meta_name] = dimension
-    elif dimension == existingDim:
-      raise Exception(f'Duplicate add of dimension {dimension}')
     else:
-      raise Exception(
-        f'Duplicate dimension {dimension.meta_name}: {existingDim} vs {dimension}'
-      )
+      if schema:
+        dicts=[el.metadict_name for el in schema.findMany(dimension.meta_name, metaType=MetaType.type_dimension) if el.meta_info_entry.meta_parent_section==dimension.meta_parent_section]
+      else:
+        dicts=[]
+      if dimension == existingDim:
+        raise Exception(f'Duplicate add of dimension {dimension} (dictionaries: {dicts})')
+      else:
+        raise Exception(
+        f'Duplicate dimension {dimension.meta_name}: {existingDim} vs {dimension} (dictionaries: {dicts})'
+        )
 
-  def addValue(self, value: MetaValue, dictionary):
+  def addValue(self, value: MetaValue, dictionary, schema):
     existing = self.valueEntries.get(value.meta_name)
     if not existing:
       self.valueEntries[value.meta_name] = value
-    elif value == existing:
-      raise Exception(
-        f'Duplicate add of value {value} from {self.dictionariesOf(value.metaName, metaType=MetaType.type_value)}'
-      )
     else:
-      raise Exception(
-        f'Duplicate dimension {value.meta_name}: {existing} vs {value} from {self.dictionariesOf(value.metaName, metaType=MetaType.type_value)}'
-      )
+      if schema:
+        dicts=[el.metadict_name for el in schema.findMany(value.meta_name, metaType=MetaType.type_value) if el.meta_info_entry.meta_parent_section==value.meta_parent_section]
+      else:
+        dicts=[]
+      if value == existing:
+        raise Exception(
+        f'Duplicate add of value {value} from {self.dictionariesOf(value.metaName, metaType=MetaType.type_value)} (dictionaries: {dicts})'
+        )
+      else:
+        # with schema we could use dictionariesOf and return all dictionaries, add extra arg?
+        raise Exception(
+        f'Duplicate dimension {value.meta_name}: {existing} vs {value} from {dictionary} (dictionaries: {dicts})'
+        )
 
   def writeSchema(self, outF, indent=0, indentIncrement=4):
     ii = indent * ' '
@@ -131,7 +190,10 @@ class MetaSchemaSection(BaseModel):
 
   def copyToInject(self, injectionBase):
     """creates a copy of this to inject in another section"""
-    subBase = injectionBase + '.' + self.name()
+    if injectionBase:
+      subBase = injectionBase + '.' + self.name()
+    else:
+      subBase = self.name()
     subS = {
       subName: sub.copyToInject(subBase)
       for subName, sub in sorted(self.subSections.items())
@@ -156,8 +218,8 @@ class MetaSchemaAbstract(BaseModel):
   abstractTypes: Set[str]
 
   @property
-  def meta_used_in_section(self):
-    return sorted(self.section)
+  def meta_used_in_sections(self):
+    return sorted(self.sections)
 
   @property
   def meta_used_in_values(self):
@@ -177,21 +239,23 @@ class MetaSchemaAbstract(BaseModel):
     def writeExtra(outF, indent):
       """Writes out the extra schema related info"""
       ii = indent * ' '
-      sName = self.section.meta_name
-      outF.write(f',\n{ii}"meta_schema_entry_info": {{')
-      outF.write(f',\n{ii}  "meta_schema_entry_main_dictionary": {value}'.
-                 format(ii=ii, value=jd(schema.mainDictionary)))
-      outF.write(f',\n{ii}  "meta_used_in_section": {value}'.format(
-        ii=ii, value=jd(self.meta_used_in_section)))
-      outF.write(f',\n{ii}  "meta_used_in_values": {value}'.format(
-        ii=ii, value=jd(self.meta_used_in_values)))
-      outF.write(f',\n{ii}  "meta_used_in_dimensions": {value}'.format(
-        ii=ii, value=jd(self.meta_used_in_dimensions)))
-      outF.write(f',\n{ii}  "meta_used_in_abstract_types": {value}'.format(
-        ii=ii, value=jd(self.meta_used_in_abstract_types)))
-      outF.write(',\n{ii}}}')
+      aName = self.abstract_type.meta_name
+      aType = schema.findOne(aName, MetaType.type_abstract)
+      outF.write(',\n{ii}"meta_source_dictionary": {value}'.format(
+        ii=ii, value=jd(aType.metadict_name)))
 
-    self.abstract_type.write(outF, indent=intent, writeExtra=writeExtra)
+    ii = indent * ' '
+    outF.write(f'{{\n{ii}  "meta_info_entry": [')
+    self.abstract_type.write(outF, indent=indent + 4, writeExtra=writeExtra)
+    outF.write('],\n{ii}  "meta_used_in_sections": {value}'.format(
+      ii=ii, value=jd(self.meta_used_in_sections)))
+    outF.write(',\n{ii}  "meta_used_in_values": {value}'.format(
+      ii=ii, value=jd(self.meta_used_in_values)))
+    outF.write(',\n{ii}  "meta_used_in_dimensions": {value}'.format(
+      ii=ii, value=jd(self.meta_used_in_dimensions)))
+    outF.write(',\n{ii}  "meta_used_in_abstract_types": {value}'.format(
+      ii=ii, value=jd(self.meta_used_in_abstract_types)))
+    outF.write(f'\n{ii}}}')
 
 
 class DataVisitor:
@@ -339,9 +403,11 @@ class ConcreteTypeDefiner(DataVisitor):
         self.knownTypes[secName] = KnownTypes(secName, secName)
       self.defineType(path, typeName=secName, superName=None, renames=renames)
 
+
 SectToInject = namedtuple('SectToInject', [
   'sect', 'sectRegexp', 'requiredAbstract', 'excludedAbstract'
 ])
+
 
 class MetaSchema(BaseModel):
   metaInfo: MetaInfo
@@ -372,8 +438,13 @@ class MetaSchema(BaseModel):
     while sAttName:
       if sAttName in sectionPathNames:
         raise Exception(f'circular ref back to {sAttName} after {superDone}')
-      sAtt = self.metaInfo.findSection(
-        sAttName, dictionaryNames=self.dictionaries)
+      try:
+        sAtt = self.metaInfo.findSection(
+          sAttName, dictionaryNames=self.dictionaries)
+      except:
+        raise Exception(
+          f'Failed to find {sAttName} climbing up the parents of {sectionPathNames} to ensure {sectionName}'
+        )
       existingSection = self.sections.get(sAttName)
       if not existingSection:
         newSection = MetaSchemaSection(
@@ -385,13 +456,13 @@ class MetaSchema(BaseModel):
           dimensions={})
         self.sections[sAttName] = newSection
         if sectionPath:
-          newSection.addSubsection(sectionPath[-1])
+          newSection.addSubsection(sectionPath[-1], self)
         sectionPath.append(newSection)
         sectionPathNames.append(sAttName)
         sAttName = sAtt.meta_info_entry.meta_parent_section
       else:
         if sectionPath:
-          existingSection.addSubsection(sectionPath[-1])
+          existingSection.addSubsection(sectionPath[-1], self)
         sectionPath.append(existingSection)
         sectionPathNames.append(existingSection.meta_path)
         foundTop = True
@@ -416,46 +487,46 @@ class MetaSchema(BaseModel):
       if not sec.isPartialSection()
     }
 
-  def visitDataSectionPaths(self, visit, pristine=False):
-    """visit all data sections paths for which visit returns true"""
-    if pristine:
-      rSects = self.rootSections
-    else:
-      rSects = self.dataView
-    for rSecName, rSec in sorted(rSects.items()):
-      self.visitSectionPath([rSec], visit)
+  #def visitDataSectionPaths(self, visit, pristine=False):
+  #  """visit all data sections paths for which visit returns true"""
+  #  if pristine:
+  #    rSects = self.rootSections
+  #  else:
+  #    rSects = self.dataView
+  #  for rSecName, rSec in sorted(rSects.items()):
+  #    self.visitSectionPath([rSec], visit)
 
-  def visitSectionPath(self, path, visit):
-    """visit all subsection of the given path for which visit returns true
-    Probably recursive code would be nicer.
-    Modifies the current path in place (copy if you want to hang it on the next iteration)"""
-    path = list(path)
-    minDepth = len(path)
-    while path:
-      goDeeper = visit(path)
-      # go sub
-      lastS = path[-1]
-      pathNames = [el.section.meta_name for el in path]
-      if goDeeper and lastS.subSections:
-        firstSubSName = sorted(lastS.subSections.keys())[0]
-        if firstSubSName in pathNames:
-          raise Exception(
-            'Section loop, {pathNames} comes back to {firstSubSName}')
-        path.append(lastS.subSections[firstSubSName])
-      else:
-        # go next
-        while len(path) > minDepth:
-          lastName = path[-1].section.meta_name
-          parentS = path[-2]
-          siblingsNames = sorted(parentS.subSections.keys())
-          nextIndex = siblingsNames.index(lastName) + 1
-          if nextIndex < len(parentS.subSections):
-            path[-1] = parentS.subSections[siblingsNames[nextIndex]]
-            break
-          else:
-            path.pop()
-        if len(path) == minDepth:
-          return
+  #def visitSectionPath(self, path, visit):
+  #  """visit all subsection of the given path for which visit returns true
+  #  Probably recursive code would be nicer.
+  #  Modifies the current path in place (copy if you want to hang it on the next iteration)"""
+  #  path = list(path)
+  #  minDepth = len(path)
+  #  while path:
+  #    goDeeper = visit(path)
+  #    # go sub
+  #    lastS = path[-1]
+  #    pathNames = [el.section.meta_name for el in path]
+  #    if goDeeper and lastS.subSections:
+  #      firstSubSName = sorted(lastS.subSections.keys())[0]
+  #      if firstSubSName in pathNames:
+  #        raise Exception(
+  #          'Section loop, {pathNames} comes back to {firstSubSName}')
+  #      path.append(lastS.subSections[firstSubSName])
+  #    else:
+  #      # go next
+  #      while len(path) > minDepth:
+  #        lastName = path[-1].section.meta_name
+  #        parentS = path[-2]
+  #        siblingsNames = sorted(parentS.subSections.keys())
+  #        nextIndex = siblingsNames.index(lastName) + 1
+  #        if nextIndex < len(parentS.subSections):
+  #          path[-1] = parentS.subSections[siblingsNames[nextIndex]]
+  #          break
+  #        else:
+  #          path.pop()
+  #      if len(path) == minDepth:
+  #        return
 
   def visitData(self,
                 visitor,
@@ -483,7 +554,7 @@ class MetaSchema(BaseModel):
     res = False
     if secNow.subSections and visitor.shouldVisitSubsections(path):
       res = True
-      for secName,sec in sorted(path[-1].subSections.items()):
+      for secName, sec in sorted(path[-1].subSections.items()):
         newPath = path + [sec]
         self.visitDataPath(newPath, visitor)
       visitor.didVisitSubsections(path)
@@ -510,6 +581,17 @@ class MetaSchema(BaseModel):
       newPath = path + [sec]
       yield from iterateDataPath(newPath)
 
+  def loopIds(self):
+    'Loops on all entries ids'
+    for sName, s in self.sections.items():
+      yield s.section.entryId()
+      for vName, v in s.valueEntries.items():
+        yield v.entryId()
+      for dName, d in s.dimensions.items():
+        yield d.entryId()
+    for aName, a in self.abstractTypes.items():
+      yield a.abstract_type.entryId()
+
   def addSchemaOfDictionary(self, dict: MetaDictionary):
     for entry in dict.meta_info_entry:
       meta_type = entry.meta_type
@@ -535,7 +617,12 @@ class MetaSchema(BaseModel):
         existingEntry = self.dimensions.get(entry.meta_name)
         if not existingEntry:
           self.dimensions[entry.meta_name] = entry
-          self.ensureSection(entry.meta_parent_section).addDimension(entry)
+          try:
+            self.ensureSection(entry.meta_parent_section).addDimension(entry, self)
+          except:
+            raise Exception(
+            f'Failure to find meta_parent_section {entry.meta_parent_section} of dimension {entry.meta_name}'
+          )
         elif existingEntry != entry:
           raise Exception(
             f'Duplicated dimension {entry.meta_name}: {entry} vs {existingEntry} ({self.dictionariesOf(entry.meta_name,metaType=MetaType.type_dimension)})'
@@ -547,8 +634,13 @@ class MetaSchema(BaseModel):
       elif meta_type == MetaType.type_section:
         self.ensureSection(entry.meta_name)
       elif meta_type == MetaType.type_value:
-        sec = self.ensureSection(entry.meta_parent_section)
-        sec.addValue(entry, dict.metadict_name)
+        try:
+          sec = self.ensureSection(entry.meta_parent_section)
+        except:
+          raise Exception(
+            f'Failure to find meta_parent_section {entry.meta_parent_section} of value {entry.meta_name}'
+          )
+        sec.addValue(entry, dict.metadict_name, self)
       else:
         raise Exception(
           f'Unexpected meta_type {meta_type} in entry {entry.meta_name} of dictionary {dict.metadict_name}'
@@ -593,6 +685,9 @@ class MetaSchema(BaseModel):
                        abstractTypesToExclude))
 
     class InjectChecker(DataVisitor):
+      def __init__(self, schema):
+        self.schema = schema
+
       def shouldVisitSection(self, path):
         pastSectNames = [s.section.meta_name for s in path]
         sec = path[-1]
@@ -600,8 +695,9 @@ class MetaSchema(BaseModel):
           for sName in sec.section.meta_contains:
             if sName in sec.subSections or sName in pastSectNames:
               continue
+            sToAdd = self.schema.sections[sName]
             dottedPath = '.'.join(pastSectNames)
-            injectedSection = sToI.copyToInject(dottedPath)
+            injectedSection = sToAdd.copyToInject(dottedPath)
             pathsToCheck.append(path + [injectedSection])
         for sToI in secToInject:
           if sToI.sect.name() in sec.subSections or sToI.sect.name(
@@ -625,7 +721,7 @@ class MetaSchema(BaseModel):
     pathsToCheck = [[sect]
                     for sName, sect in sorted(self.rootSections.items())]
     pathsToCheck.sort(key=lambda x: x[0].section.meta_name)
-    visitor = InjectChecker()
+    visitor = InjectChecker(self)
     while pathsToCheck:
       pathToCheck = pathsToCheck[0]
       pathsToCheck = pathsToCheck[1:]
@@ -648,9 +744,9 @@ class MetaSchema(BaseModel):
             raise Exception(
               f'Missing abstract type {aStr} used in value {vName} of section {secName} from dictionary {v.dictionary}'
             )
-          abNow.abstractTypes.add(f'{secName}.{vName}')
+          abNow.values.add(f'{secName}.{vName}')
     for abName, ab in self.abstractTypes.items():
-      for aStr in ab.meta_abstract_types:
+      for aStr in ab.abstract_type.meta_abstract_types:
         abNow = self.abstractTypes.get(aStr)
         if not abNow:
           raise Exception(
@@ -664,7 +760,7 @@ class MetaSchema(BaseModel):
           raise Exception(
             f'Missing abstract type {aStr} used in dimension {self.findMany(dimName,metaType=MetaType.type_dimension)}'
           )
-        abNow.dimensions.add(secName)
+        abNow.dimensions.add(f'{dim.meta_parent_section}.{dimName}')
 
   def extendToDictionary(self, newDictName: str):
     """Modifies this dictionary adding the missing dependencies of newDictName
@@ -682,6 +778,34 @@ class MetaSchema(BaseModel):
       dict = metaInfo.dictionaries[d]
       self.addSchemaOfDictionary(dict)
     return self
+
+  def write(self, outF, indent=0):
+    "Writes out json version of the schema"
+    ii = indent * ' '
+    outF.write(
+      f'{{\n{ii}  "meta_schema_main_dictionary": {jd(self.mainDictionary)}')
+    outF.write(
+      f',\n{ii}  "meta_schema_included_dictionary": {jd(sorted(self.dictionaries))}'
+    )
+    outF.write(f',\n{ii}  "meta_section": [')
+    comma = ''
+    for sName, s in sorted(self.sections.items()):
+      if comma:
+        outF.write(comma)
+      else:
+        comma = ', '
+      s.write(outF, indent=indent + 4, schema=self)
+    outF.write(' ]')
+    outF.write(f',\n{ii}  "meta_abstract": [')
+    comma = ''
+    for aName, a in sorted(self.abstractTypes.items()):
+      if comma:
+        outF.write(comma)
+      else:
+        comma = ', '
+      a.write(outF, schema=self, indent=indent + 4)
+    outF.write(' ]')
+    outF.write(f'\n{ii}}}')
 
   def writeSchema(self, outF, indent=0, indentIncrement=4):
     ii = indent * ' '
