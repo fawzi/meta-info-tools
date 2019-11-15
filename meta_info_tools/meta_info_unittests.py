@@ -1,5 +1,5 @@
 import unittest
-import meta_info
+import .meta_info
 import io
 import json
 

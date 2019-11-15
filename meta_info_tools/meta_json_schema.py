@@ -1,5 +1,5 @@
-from ..meta_schema import MetaSchema
-from ..meta_info import MetaDataType
+from .meta_schema import MetaSchema
+from .meta_info import MetaDataType
 
 class JsonSchemaDumper (object):
 	def __init__(self,schema,basePath, baseUri=None, suspendable=True):

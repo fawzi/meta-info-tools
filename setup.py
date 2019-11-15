@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="meta-info-fawzi",
+    name="meta-info-tools-fawzi",
     version="0.0.1",
     author="Fawzi Mohamed",
     author_email="fawzi@kitabi.eu",
@@ -12,11 +12,11 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/fawzi/meta-info-tools",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(include=["meta_info_tools", "meta_info_tools.*"]),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires='>=3.6',
+    python_requires=">=3.6",
 )
