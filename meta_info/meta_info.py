@@ -605,7 +605,7 @@ class MetaAbstract(MetaInfoBase):
 MetaInfoEntry = Union[MetaValue, MetaSection, MetaDimensionValue, MetaAbstract]
 
 
-class MetadictRequire(BaseModel):
+class MetadictRequired(BaseModel):
   metadict_required_name: str
   metadict_required_version: Optional[str]
 
@@ -625,7 +625,7 @@ class MetaDictionary(BaseModel):
   metadict_source: Optional[List[str]]
   metadict_description: Union[str, List[str]]
   metadict_version: Optional[str]
-  metadict_require: List[MetadictRequire] = []
+  metadict_required: List[MetadictRequired] = []
   meta_info_entry: list = []  #List[MetaInfoEntry] = []
   meta_info_entries_cache: Optional[Dict[str, list]]  #List[MetaInfoEntry]]]
 
@@ -696,9 +696,9 @@ class MetaDictionary(BaseModel):
     if self.metadict_version is not None:
       outF.write(',\n{ii}"metadict_version": {value}'.format(
         ii=ii, value=jd(self.metadict_version)))
-    outF.write(f',\n{ii}"metadict_require": [ ')
+    outF.write(f',\n{ii}"metadict_required": [ ')
     first = True
-    for el in self.metadict_require:
+    for el in self.metadict_required:
       if first:
         first = False
       else:
@@ -745,8 +745,8 @@ class MetaDictionary(BaseModel):
       metadict_source = d.get("metadict_source")
       metadict_description = d.get("metadict_description", "")
       metadict_version = d.get("metadict_version")
-      metadict_require = [
-        MetadictRequire(**x) for x in d.get("metadict_require", [])
+      metadict_required = [
+        MetadictRequired(**x) for x in d.get("metadict_required", d.get("metadict_require",[]))
       ]
     except:
       dd = {k: v for k, v in d.items() if k != "meta_info_entry"}
@@ -760,7 +760,7 @@ class MetaDictionary(BaseModel):
       metadict_source=metadict_source,
       metadict_description=metadict_description,
       metadict_version=metadict_version,
-      metadict_require=metadict_require,
+      metadict_required=metadict_required,
       meta_info_entry=meta_info_entry)
 
   @classmethod
@@ -937,7 +937,7 @@ class MetaInfo(BaseModel):
       for n, d in sorted(self.dictionaries.items()):
         if n not in namesDone:
           namesDone.add(n)
-          for dep in d.metadict_require:
+          for dep in d.metadict_required:
             name = dep.metadict_required_name
             if name not in self.dictionaries:
               newD = loadDictNamed(name)
@@ -964,7 +964,7 @@ class MetaInfo(BaseModel):
           raise Exception(
             f"missing dependency {dictNow} of {dictName}, call complete to load the dependency"
           )
-      for dep in d.metadict_require:
+      for dep in d.metadict_required:
         name = dep.metadict_required_name
         if name not in deps:
           deps.add(name)
