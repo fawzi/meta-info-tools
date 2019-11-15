@@ -6,7 +6,7 @@ from meta_check import doChecks, NameCheckLevel, ClashKinds, ClashException
 import logging
 import shutil
 
-defaultBasePath=os.path.realpath(os.path.normpath(os.path.abspath(os.path.join(os.path.dirname(__file__),'../../meta_info'))))
+defaultBasePath=os.path.realpath(os.path.normpath(os.path.abspath(os.path.join(os.path.dirname(__file__),'../../nomad-meta-info'))))
 
 def cleanDir(dir, maxDepth=4):
 	"""removes the backup (*.bk) files and directories from the path dir up to a depth of maxDepth""" 
@@ -129,8 +129,8 @@ def cascadeCmd(args):
 	if not args.exploded_directory and not args.dict_directory and not args.docs_directory:
 		if not args.base_directory:
 			args.base_directory=defaultBasePath
-		args.exploded_directory=os.path.join(args.base_directory, "meta_info_exploded")
-		args.dict_directory=os.path.join(args.base_directory,"meta_info/meta_dictionary")
+		args.exploded_directory=os.path.join(args.base_directory, "meta_dictionary_exploded")
+		args.dict_directory=os.path.join(args.base_directory,"meta_dictionary")
 		args.docs_directory=os.path.join(args.base_directory,"docs")
 	cascade(args.exploded_directory, args.dict_directory, args.docs_directory, deleteOldBk=args.delete_old_bk, continueOnError=args.continue_on_error, args=args)
 
