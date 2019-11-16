@@ -13,6 +13,13 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/fawzi/meta-info-tools",
     packages=setuptools.find_packages(include=["meta_info_tools", "meta_info_tools.*"]),
+    install_requires=[
+        'Markdown>=3.1.1',
+        'pydantic>=0.28',
+    ],
+    setup_requires=[
+        'black'
+    ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
