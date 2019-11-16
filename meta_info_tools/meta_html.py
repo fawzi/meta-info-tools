@@ -692,6 +692,9 @@ class SiteWriter:
             pathNow = self.basePath
         if dirNow is None:
             dirNow = self.generatedPaths
+        if not dirNow:
+            # do not clean up directories without at least an entry
+            return
         inDir = set(os.listdir(pathNow))
         toRm = [os.path.join(pathNow, f) for f in inDir.difference(dirNow.keys())]
         safeRemove(toRm)
