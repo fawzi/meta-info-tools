@@ -553,7 +553,7 @@ class SiteWriter:
             p, body=self.abstractsIndex(), basePath="..", title="Abstract Types Index"
         )
         for aName, a in sorted(self.schema.abstractTypes.items()):
-            p = os.path.join(self.basePath, "abstract/{aName}/index.html")
+            p = os.path.join(self.basePath, f"abstract/{aName}/index.html")
             aa = a.abstract_type
             body = self.metaDesc(a.abstract_type, basePath="../..")
             self.writeLayout(
