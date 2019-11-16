@@ -4,7 +4,7 @@ from pydantic import BaseModel, ValidationError, validator
 from datetime import date
 import hashlib, logging
 import json, tempfile
-import re, io
+import re, io, stat
 import os, os.path
 
 jd = lambda x: json.dumps(x, sort_keys=True, ensure_ascii=True)
@@ -62,6 +62,9 @@ def writeFile(targetPath, writer):
         try:
             writer(outF)
             outF.flush()
+            os.chmod(
+                outF.name, stat.S_IWUSR | stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH
+            )
         except:
             raise Exception(
                 f"Failure trying to write {targetPath}, leaving failed attempt in {outF.name}"
