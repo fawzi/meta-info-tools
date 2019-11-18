@@ -400,7 +400,7 @@ class SiteWriter:
             "meta_repeats",
         ]
         body = []
-        body += self.breadcrumb(meta, basePath)
+        body += self.breadcrumb(meta, basePath, target="detail")
         body.append(f"<h1>{metaName}</h1>\n")
         body.append(
             f'<h3 class="rightTitle">{mType.value} from {ss.dictionariesOf(metaName, metaType=mType)}</h3>\n'
