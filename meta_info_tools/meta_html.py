@@ -664,7 +664,13 @@ class SiteWriter:
     def writeIndex(self):
         "writes the main index"
         body = [
-            '<iframe src="meta_index.html" height="400" width="150" name="index"></iframe> <iframe src="meta_index.html" height="300" width="20" name="index"></iframe> <br>\n<iframe src="data/index.html" name="data"></iframe>\n'
+            """
+    <table>
+      <tr> <td rowspan="2">
+	  <iframe src="meta_index.html" height="615" width="350" name="index"></iframe> </td><td> <iframe src="section/index.html" height="400" width="550" name="detail"></iframe> </td></tr>
+      <tr><td><iframe src="data/index.html" height="200" width="550" name="data"></iframe></td></tr>
+    </table>
+"""
         ]
         p = os.path.join(self.basePath, "index.html")
         self.writeLayout(p, body, title="Index", basePath=".")
