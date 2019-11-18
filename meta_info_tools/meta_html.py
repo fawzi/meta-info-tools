@@ -566,9 +566,9 @@ class SiteWriter:
         basePath = ".."
         body.append(f'<h1>Section index</h1>\n<ul class="index">\n')
         for sName, s in sorted(self.schema.sections.items()):
-            body.append(
-                f"<li>{metaLink(s.section,basePath)}\n{self.sectionIndex(s,basePath)}</li>\n"
-            )
+            body.append(f"<li>{metaLink(s.section,basePath)}\n")
+            body += self.sectionIndex(s, basePath)
+            body.append("</li>\n")
         body.append("</ul>")
         return body
 
