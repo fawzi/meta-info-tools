@@ -764,6 +764,7 @@ class MetaSchema(BaseModel):
                         sToAdd = self.schema.sections[sName]
                         dottedPath = ".".join(pastSectNames)
                         injectedSection = sToAdd.copyToInject(dottedPath)
+                        path[-1].subSections[sName] = injectedSection
                         pathsToCheck.append(path + [injectedSection])
                 for sToI in secToInject:
                     if (
@@ -780,6 +781,7 @@ class MetaSchema(BaseModel):
                     ):
                         dottedPath = ".".join(pastSectNames)
                         injectedSection = sToI.copyToInject(dottedPath)
+                        path[-1].subSections[sToI.sect.name()] = injectedSection
                         pathsToCheck.append(path + [injectedSection])
                 return True
 
