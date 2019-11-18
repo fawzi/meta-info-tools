@@ -324,8 +324,8 @@ class SiteWriter:
     def writeMetaIndex(self, basePath=None):
         p = os.path.join(self.basePath, "meta_index.html")
         body = []
+        body.append('<ul class="index">\n')
         for sName, s in sorted(self.schema.sections.items()):
-            body.append('<ul class="index">\n')
             body.append(
                 f'<li class="index" id="IS-{sName}" ><label class="index"><a href="section/{sName}/index.html" target="detail" class="index">{sName}</label></a>\n'
             )
