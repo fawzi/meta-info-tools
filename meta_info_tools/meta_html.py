@@ -174,6 +174,8 @@ class SiteWriter:
 
     def writeLayout(self, targetPath, body, title, basePath):
         """writes out the body into a full html page template"""
+        if not basePath:
+            basePath = "."
 
         def writer(outF):
             outF.write(
