@@ -554,47 +554,6 @@ class MetaSchema(BaseModel):
             if not sec.isPartialSection()
         }
 
-    # def visitDataSectionPaths(self, visit, pristine=False):
-    #  """visit all data sections paths for which visit returns true"""
-    #  if pristine:
-    #    rSects = self.rootSections
-    #  else:
-    #    rSects = self.dataView
-    #  for rSecName, rSec in sorted(rSects.items()):
-    #    self.visitSectionPath([rSec], visit)
-
-    # def visitSectionPath(self, path, visit):
-    #  """visit all subsection of the given path for which visit returns true
-    #  Probably recursive code would be nicer.
-    #  Modifies the current path in place (copy if you want to hang it on the next iteration)"""
-    #  path = list(path)
-    #  minDepth = len(path)
-    #  while path:
-    #    goDeeper = visit(path)
-    #    # go sub
-    #    lastS = path[-1]
-    #    pathNames = [el.section.meta_name for el in path]
-    #    if goDeeper and lastS.subSections:
-    #      firstSubSName = sorted(lastS.subSections.keys())[0]
-    #      if firstSubSName in pathNames:
-    #        raise Exception(
-    #          'Section loop, {pathNames} comes back to {firstSubSName}')
-    #      path.append(lastS.subSections[firstSubSName])
-    #    else:
-    #      # go next
-    #      while len(path) > minDepth:
-    #        lastName = path[-1].section.meta_name
-    #        parentS = path[-2]
-    #        siblingsNames = sorted(parentS.subSections.keys())
-    #        nextIndex = siblingsNames.index(lastName) + 1
-    #        if nextIndex < len(parentS.subSections):
-    #          path[-1] = parentS.subSections[siblingsNames[nextIndex]]
-    #          break
-    #        else:
-    #          path.pop()
-    #      if len(path) == minDepth:
-    #        return
-
     def visitData(
         self, visitor, partialSections=True, fullSections=True, pristine=False
     ):
