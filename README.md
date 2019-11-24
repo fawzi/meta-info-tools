@@ -20,7 +20,7 @@ python -m meta_info_tools.meta_tool --help
 It can be used to generates an exploded or reformatted version of a dictionary, check a dictionary, or generate documentation for it.
 The cascade command does all those things if the files are put in a standard directory format (does the exploded dictionaries first, reformats them, then moves to the single dictionaries, regenerating them from the exploded version, reformatting them otherwise, finally performs checks and generates documentation for all available dictionaries.
 
-## Develop
+## Development
 
 files are formatted with [python black](https://pypi.org/project/black/)/
 Install a local development version from this repository:
