@@ -751,7 +751,7 @@ class MetaSchema(BaseModel):
         for sName, s in self.rootSections.items():
             self.dataView[sName] = s.copyToInject("")
 
-        pathsToCheck = [[sect] for sName, sect in sorted(self.rootSections.items())]
+        pathsToCheck = [[sect] for sName, sect in sorted(self.dataView.items())]
         pathsToCheck.sort(key=lambda x: x[0].section.meta_name)
         visitor = InjectChecker(self)
         while pathsToCheck:

@@ -344,9 +344,7 @@ class MetaQueryEnum(BaseModel):
 class MetaRangeKind(Enum):
     """The valid meta_range_kind values"""
 
-    abs_value = (
-        "abs-value"
-    )  # The range is for the absolute value of the scalar value (or every component for arrays)
+    abs_value = "abs-value"  # The range is for the absolute value of the scalar value (or every component for arrays)
     norm2 = "norm2"  # The range is for the euclidean norm of the value
     utf8_length = "utf8-length"  # The length of the string value using utf-8 encoding
     repetitions = "repetitions"  # The number of repetitions for a repeating value
@@ -1133,8 +1131,12 @@ class MetaInfo(BaseModel):
         return d
 
     @classmethod
+    def empty(cls):
+        return cls(dictionaries={}, metaNameInDicts={})
+
+    @classmethod
     def withPath(cls, dictPath, extraPaths=None, loadAll=False):
-        metaI = cls(dictionaries={}, metaNameInDicts={})
+        metaI = cls.empty()
         d = metaI.loadDictionariesStartingAtPath(
             dictPath=dictPath, extraPaths=extraPaths, loadAll=loadAll
         )
