@@ -4,7 +4,7 @@
 # version/ sections
 from .meta_schema import MetaSchema, DataVisitor
 from .meta_info import MetaType, writeFile, safeRemove, maybeJoinStr
-import io, re, os
+import io, re, os, json, logging
 import markdown
 
 
@@ -41,8 +41,12 @@ def metaLink(meta, basePath, target="detail", htmlClass="index"):
 
 def md2html(text, basePath="..", schema=None, raiseException=False):
     """Markdown to html conversion (and linking of meta_names)"""
-    metaNameRe = re.compile(r"(\b[a-zA-Z0-9]*_[a-zA-Z0-9_]+\b|\bXXX[0-9]+XXX\b)")
-    xxxRe = re.compile(r"(\bXXX[0-9]+XXX\b)")
+    metaNameRe = re.compile(
+        r"(\b[a-zA-Z0-9]*_[a-zA-Z0-9_]+\b|XXY[0-9]+YXX|\\.|\$[^$]*\$)"
+    )
+    xxxRe = re.compile(r"(XXY[0-9]+YXX)")
+    metaRe = re.compile(r"(\b[a-zA-Z0-9]*_[a-zA-Z0-9_]+\b)")
+    mathRe = re.compile(r"\$[^$]*\$")
     modif = metaNameRe.split(maybeJoinStr(text))
     toRepl = set()
     for i in range(1, len(modif), 2):
@@ -50,28 +54,40 @@ def md2html(text, basePath="..", schema=None, raiseException=False):
     ii = 0
     repl = {}
     backR = {}
-    for metaName in toRepl:
-        if xxxRe.match(metaName):
-            repl[metaName] = metaName
-            backR[metaName] = metaName
-        else:
-            r = f"XXX{ii}XXX"
-            while r in toRepl:
-                ii += 1
-                r = f"XXX{ii}XXX"
-            repl[metaName] = r
-            metas = schema.findMany(metaName)
+    logging.debug(f"md2html toRepl: {toRepl}")
+    for toReplace in toRepl:
+        ii += 1
+        r = f"XXY{ii}YXX"
+        while r in toRepl:
+            ii += 1
+            r = f"XXY{ii}YXX"
+        if metaRe.match(toReplace):
+            repl[toReplace] = r
+            metas = schema.findMany(toReplace)
             if metas:
                 if len(metas) == 1:
                     meta = metas[0]
                     link = pathToMetaDesc(meta.meta_info_entry, basePath)
                 else:
-                    link = os.path.join(basePath, f"meta/{metaName}.html")
-                backR[r] = f'<a href="{link}">{metaName}</a>'
+                    link = os.path.join(basePath, f"meta/{toReplace}.html")
+                backR[r] = f'<a href="{link}">{toReplace}</a>'
             else:
-                backR[r] = r
+                backR[r] = toReplace
+        elif mathRe.match(toReplace):
+            repl[toReplace] = r
+            backR[r] = (
+                "<span class='maths'>"
+                + toReplace[1:-1].replace("<", "\\lt ").replace(">", "\\gt ")
+                + "</span>"
+            )
+        else:
+            repl[toReplace] = toReplace
+            backR[toReplace] = toReplace
+    logging.debug(f"md2html repl: {repl}")
+    logging.debug(f"md2html backR: {backR}")
     for i in range(1, len(modif), 2):
         modif[i] = repl[modif[i]]
+    logging.debug(f"md2html to markdown: {''.join(modif)}")
     try:
         html = markdown.markdown("".join(modif))
     except:
@@ -81,6 +97,7 @@ def md2html(text, basePath="..", schema=None, raiseException=False):
             logging.exception(f"interpreting markdown {repr(text)} failed")
             html = text
     splitRes = xxxRe.split(html)
+    logging.debug(f"md2html splitRes: {splitRes}")
     for i in range(1, len(splitRes), 2):
         placeholder = splitRes[i]
         if not placeholder in backR:
@@ -89,6 +106,7 @@ def md2html(text, basePath="..", schema=None, raiseException=False):
             )
         else:
             splitRes[i] = backR[placeholder]
+    logging.debug(f"finalhtml: {repr(''.join(splitRes))}")
     return "".join(splitRes)
 
 
@@ -172,10 +190,14 @@ class SiteWriter:
         self.basePath = basePath
         self.generatedPaths = {}
 
-    def writeLayout(self, targetPath, body, title, basePath):
+    def writeLayout(
+        self, targetPath, body, title, basePath, bodyClass="meta", headExtra=None
+    ):
         """writes out the body into a full html page template"""
         if not basePath:
             basePath = "."
+        if not headExtra:
+            headExtra = ""
 
         def writer(outF):
             outF.write(
@@ -186,10 +208,10 @@ class SiteWriter:
 	  <title>{title}</title>
 	  <meta name="description" content="Meta info description">
 	  <meta name="author" content="meta_tool">
-	  <link rel="stylesheet" href="{basePath}/css/metaStyle.css">
+	  <link rel="stylesheet" href="{basePath}/css/metaStyle.css">{headExtra}
 	</head>
-	<body>
-		"""
+	<body class="{bodyClass}">
+"""
             )
             for l in body:
                 outF.write(l)
@@ -326,18 +348,80 @@ class SiteWriter:
     def writeMetaIndex(self, basePath=None):
         p = os.path.join(self.basePath, "meta_index.html")
         body = []
+        data = []
+        body.append(
+            '<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>\n'
+        )
+        body.append(
+            '<label>Filter:</label><input type="text" id="filter" size="40" >\n'
+        )
+        body.append('<span class="checkbox-list">')
         body.append('<ul class="index">\n')
         for sName, s in sorted(self.schema.sections.items()):
             body.append(
                 f'<li class="index" id="IS-{sName}" ><label class="index"><a href="section/{sName}/index.html" target="detail" class="index">{sName}</label></a>\n'
             )
+            data.append(
+                {
+                    "id": f"IS-{sName}",
+                    "text": f"{sName} {MetaType.type_section.value} {s.section.meta_description}".lower(),
+                }
+            )
+            for vName, v in sorted(s.valueEntries.items()):
+                data.append(
+                    {
+                        "id": f"IV-{sName}-{vName}",
+                        "text": f"{vName} {MetaType.type_value.value} {v.meta_description}".lower(),
+                    }
+                )
+            for dName, d in sorted(s.dimensions.items()):
+                data.append(
+                    {
+                        "id": f"ID-{sName}-{dName}",
+                        "text": f"{dName} {MetaType.type_dimension.value} {d.meta_description}".lower(),
+                    }
+                )
             body += self.sectionIndex(s, basePath)
             body.append("</li>\n")
         for aName, a in sorted(self.schema.abstractTypes.items()):
             body.append(
                 f'<li class="index" id="IA-{aName}"><label class="index"><a href="abstract/{aName}/index.html" target="detail" class="index">{aName}</a></label></li>\n'
             )
-        body.append("</ul>\n")
+            data.append(
+                {
+                    "id": f"IA-{aName}",
+                    "text": f"{aName} {MetaType.type_abstract.value} {a.abstract_type.meta_description}".lower(),
+                }
+            )
+        body.append("</ul></span>\n")
+        body.append("<script>let data=")
+        body.append(json.dumps(data))
+        body.append(
+            """;
+$('#filter').keyup(function() {
+  var toSearch = $(this).val().toLowerCase().split(/ +/);
+
+  data.forEach(function(x){
+    let hasValue=true
+    let i = 0
+    let text=x.text
+    while (hasValue && i < toSearch.length) {
+      if (text.indexOf(toSearch[i]) < 0) {
+        hasValue = false
+      }
+      i += 1
+    }
+    let el = $('#'+x.id)
+    if (hasValue) {
+      el.show()
+      el.parents('li').show()           // show all li parents up the ancestor tree
+    } else {
+      el.hide();                // hide current li as it doesn't match
+    }
+  });
+});</script>
+"""
+        )
         self.writeLayout(targetPath=p, body=body, title="Meta Index", basePath=basePath)
 
     def writeCss(self):
@@ -348,13 +432,63 @@ class SiteWriter:
         def writer(outF):
             outF.write(
                 """
-			ul.index,li.index,label.index {}
-			.subIndex {}
-			.rightTitle { text-align: right; }
-			.metaKey {}
-			.metaValue {}
-			.metaValues {}
-			"""
+a {
+  font-weight: bold;
+  color: blue;
+  text-decoration-line: none;
+}
+a:visited {
+  color: purple;
+}
+body.frames {
+   margin: 0;            /* Reset default margin */
+   background: #AAAAAA;
+}
+table.frames {
+   border: none;
+   width: 100%;
+}
+dt {
+  font-weight: bold;
+  font-size: small;
+}
+h1.meta_name {
+  text-align: center;
+}
+.label {
+background-color: #AA;
+}
+.metaKey {
+  font-weight: bold;
+  font-size: small;
+}
+#frameIndex {
+    display: block;       /* iframes are inline by default */
+    border: none;         /* Reset default border */
+    height: 99vh;        /* Viewport-relative units */
+    width: 39vw;
+    background: #FAFAFA;
+}
+#frameDetail {
+    display: block;       /* iframes are inline by default */
+    border: none;         /* Reset default border */
+    height: 59vh;        /* Viewport-relative units */
+    width: 59vw;
+    background: #FAFAFA;
+}
+#frameData {
+    display: block;       /* iframes are inline by default */
+    border: none;         /* Reset default border */
+    height: 39vh;        /* Viewport-relative units */
+    width: 59vw;
+    background: #FAFAFA;
+}
+ul.index,li.index,label.index {}
+.subIndex {}
+.rightTitle { text-align: right; }
+.metaValue {}
+.metaValues {}
+"""
             )
             outF.flush()
 
@@ -371,18 +505,32 @@ class SiteWriter:
             t = ""
         if mType == MetaType.type_abstract:
             pIndex = os.path.join(basePath, f"abstract/index.html")
-            body.append(f'<a href="{pIndex}" class="index"{t}>abstract types</a>:\n')
+            body.append(
+                f'<a href="{pIndex}" class="index label label-info"{t}>abstract types</a>:\n'
+            )
         else:
             pIndex = os.path.join(basePath, f"section/index.html")
-            body.append(f'<a href="{pIndex}" class="index"{t}>sections</a>:\n')
+            body.append(
+                f'<a href="{pIndex}" class="index label label-info"{t}>sections</a>:\n'
+            )
         if "meta_parent_section" in meta.allSetKeys():
             sParent = self.schema.sections[meta.meta_parent_section]
             for sName in sParent.meta_path.split("."):
                 sNow = self.schema.sections[sName]
-                body.append(metaLink(sNow.section, basePath, target=target) + ".")
+                body.append(
+                    metaLink(
+                        sNow.section,
+                        basePath,
+                        target=target,
+                        htmlClass="label label-default",
+                    )
+                    + "."
+                )
         if selfLink:
-            body.append(metaLink(meta, basePath, target=target))
-        else:
+            body.append(
+                metaLink(meta, basePath, target=target, htmlClass="label label-default")
+            )
+        elif selfLink is not None:
             body.append(meta.meta_name)
         body.append("\n</div>\n")
         return body
@@ -400,42 +548,57 @@ class SiteWriter:
             "meta_parent_section",
             "meta_required",
             "meta_repeats",
+            "meta_data_type",
         ]
         body = []
-        body += self.breadcrumb(meta, basePath, target="detail")
-        body.append(f"<h1>{metaName}</h1>\n")
+        body += self.breadcrumb(meta, basePath, target="detail", selfLink=None)
+        body.append(f'<h1 class="meta_name">{metaName}</h1>\n')
         body.append(
             f'<h3 class="rightTitle">{mType.value} from {ss.dictionariesOf(metaName, metaType=mType)}</h3>\n'
         )
-        if mType == MetaType.type_section:
-            sNow = ss.sections[metaName]
-            body += self.sectionIndex(sNow, basePath, subSections=True)
-        body.append(f'<div class="metaKey">meta_description</div>\n')
+        metaInfoPath = os.path.join(basePath, "../meta")
+
+        def descLink(name):
+            return f'<a href="{metaInfoPath}/section/meta_info_entry/value/{name}.html">{name}</a>'
+
+        body.append(f'<div class="metaKey">{descLink("meta_description")}</div>\n')
         desc = md2html(meta.meta_description, schema=ss, basePath=basePath)
         body.append(f'<div class="metaValue">{desc}</div>\n')
         body.append(
-            f'<div class="metaKey">meta_abstract_types</div>\n<div class="metaValue">'
+            f'<div class="metaKey">{descLink("meta_abstract_types")}</div>\n<div class="metaValue">'
         )
         for refAName in meta.meta_abstract_types:
             body.append(
-                f'  <span class="metaLink">{metaLink(self.schema.abstractTypes[refAName].abstract_type,basePath=basePath)}</span>\n'
+                f'  <span class="metaLink">{descLink(self.schema.abstractTypes[refAName].abstract_type,basePath=basePath)}</span>\n'
             )
         body.append(f"</div>")
-        body.append(f'<div class="metaValue">{desc}</div>\n')
+        if mType == MetaType.type_section:
+            sNow = ss.sections[metaName]
+            body.append("<h2>Content</h2>")
+            body += self.sectionIndex(sNow, basePath, subSections=True)
+        body.append("<h2>Attributes</h2>")
         body.append('<dl class="metaValues">\n')
         if "meta_required" in keys:
-            body.append(f"<dt>meta_required</dt><dd>{meta.meta_required}</dd>\n")
+            body.append(
+                f"<dt>{descLink('meta_required')}</dt><dd>{meta.meta_required}</dd>\n"
+            )
         if "meta_repeats" in keys:
-            body.append(f"<dt>meta_repeats</dt><dd>{meta.meta_repeats}</dd>\n")
+            body.append(
+                f"<dt>{descLink('meta_repeats')}</dt><dd>{meta.meta_repeats}</dd>\n"
+            )
         if "meta_parent_section" in keys:
             parentPath = os.path.join(
                 basePath, f"section/{meta.meta_parent_section}/index.html"
             )
             body.append(
-                f'<dt>meta_parent_section</dt><dd><a href="{parentPath}" target="detail">{meta.meta_parent_section}</a></dd>\n'
+                f'<dt>{descLink("meta_parent_section")}</dt><dd><a href="{parentPath}" target="detail">{meta.meta_parent_section}</a></dd>\n'
+            )
+        if "meta_data_type" in keys:
+            body.append(
+                f'<dt>{descLink("meta_data_type")}</dt><dd>{meta.meta_data_type.value}</dd>\n'
             )
         for k in keys.difference(handledKeys):
-            body.append(f'<dt class="metaValues">{k}</dt>\n')
+            body.append(f'<dt class="metaValues">{descLink(k)}</dt>\n')
             body.append(f'<dd class="metaValues">{getattr(meta,k)}</dd>\n')
         body.append("</dl>\n")
         if mType == MetaType.type_abstract:
@@ -507,16 +670,6 @@ class SiteWriter:
                             tNow[component] = {}
                         tNow = tNow[component]
                 fullRootsNames = set(ss.fullRootSections().keys())
-                roots = {
-                    cName: c
-                    for cName, c in instantiateTree.items()
-                    if cName in fullRootsNames
-                }
-                nonRoots = {
-                    cName: c
-                    for cName, c in instantiateTree.items()
-                    if cName not in fullRootsNames
-                }
 
                 def addList(pathNow, levelNow):
                     if not levelNow:
@@ -533,11 +686,22 @@ class SiteWriter:
                         body.append("</li>")
                     body.append("</ul>")
 
-                body.append(f"<h3>Root</h3>\n")
-                addList(pathNow=[], levelNow=roots)
-                body.append(f"<h3>Injectable</h3>\n")
-                addList(pathNow=[], levelNow=nonRoots)
+                body.append(f"<h3>Instantiations</h3>\n")
+                addList(pathNow=[], levelNow=instantiateTree)
         return body
+
+    def mathHead(self, basePath):
+        "returns html head to render math with katex"
+        return """
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/katex.min.css" integrity="sha384-zB1R0rpPzHqg7Kpt0Aljp8JPLqbXI3bhnPWROx27a9N0Ll6ZP/+DiW/UqRcLbRjq" crossorigin="anonymous">
+
+    <!-- The loading of KaTeX is deferred to speed up page rendering -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/katex.min.js" integrity="sha384-y23I5Q6l+B6vatafAwxRu/0oK/79VlbSz7Q9aiSZUvyWYIYsd+qj+o24G5ZU2zJz" crossorigin="anonymous"></script>
+
+    <!-- To automatically render math in text elements, include the auto-render extension: -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/contrib/auto-render.min.js" integrity="sha384-kWPLUVMOks5AQFrykwIup5lo0m3iMkkHrD0uJ4H5cjeGihAutqP0yW0J6dpFiVkI" crossorigin="anonymous"
+        onload="renderMathInElement(document.body);"></script>
+"""
 
     def abstractsIndex(self):
         """Returns the index of all abstract types"""
@@ -557,9 +721,14 @@ class SiteWriter:
         for aName, a in sorted(self.schema.abstractTypes.items()):
             p = os.path.join(self.basePath, f"abstract/{aName}/index.html")
             aa = a.abstract_type
-            body = self.metaDesc(a.abstract_type, basePath="../..")
+            basePath = "../.."
+            body = self.metaDesc(a.abstract_type, basePath=basePath)
             self.writeLayout(
-                p, body=body, title=f"Abstract Type {aName}", basePath="../.."
+                p,
+                body=body,
+                title=f"Abstract Type {aName}",
+                basePath=basePath,
+                headExtra=self.mathHead(basePath),
             )
 
     def sectionsIndex(self):
@@ -585,13 +754,23 @@ class SiteWriter:
             p = os.path.join(self.basePath, f"section/{sName}/index.html")
             sec = s.section
             body = self.metaDesc(sec, basePath=basePath)
-            self.writeLayout(p, body=body, title=f"Section {sName}", basePath=basePath)
+            self.writeLayout(
+                p,
+                body=body,
+                title=f"Section {sName}",
+                basePath=basePath,
+                headExtra=self.mathHead(basePath),
+            )
             for vName, v in s.valueEntries.items():
                 basePath = "../../.."
                 p = os.path.join(self.basePath, f"section/{sName}/value/{vName}.html")
                 body = self.metaDesc(v, basePath=basePath)
                 self.writeLayout(
-                    p, body=body, title=f"Value {sName}", basePath=basePath
+                    p,
+                    body=body,
+                    title=f"Value {sName}",
+                    basePath=basePath,
+                    headExtra=self.mathHead(basePath),
                 )
             for dName, d in s.dimensions.items():
                 basePath = "../../.."
@@ -600,7 +779,11 @@ class SiteWriter:
                 )
                 body = self.metaDesc(d, basePath=basePath)
                 self.writeLayout(
-                    p, body=body, title=f"Dimension {sName}", basePath=basePath
+                    p,
+                    body=body,
+                    title=f"Dimension {sName}",
+                    basePath=basePath,
+                    headExtra=self.mathHead(basePath),
                 )
 
     def dataIndex(self):
@@ -608,18 +791,10 @@ class SiteWriter:
         body = []
         basePath = ".."
         body.append(f'<h1>Data view index</h1>\n<ul class="index">\n')
-        if self.schema.fullRootSections():
-            body.append(f"<h2>Root</h2>\n")
-            body.append('<ul class="index">\n')
-            for sName in sorted(self.schema.fullRootSections().keys()):
-                body.append(f'<li><a href="{sName}/index.html">{sName}</a></li>')
-            body.append("</ul>\n")
-        if self.schema.partialSections():
-            body.append(f"<h3>Injectable</h3>\n")
-            body.append('<ul class="index">\n')
-            for sName in sorted(self.schema.partialSections().keys()):
-                body.append(f'<li><a href="{sName}/index.html">{sName}</a></li>')
-            body.append("</ul>\n")
+        body.append('<ul class="index">\n')
+        for sName in sorted(self.schema.dataView.keys()):
+            body.append(f'<li><a href="{sName}/index.html">{sName}</a></li>')
+        body.append("</ul>\n")
         return body
 
     def writeData(self):
@@ -667,10 +842,10 @@ class SiteWriter:
         "writes the main index"
         body = [
             """
-    <table>
+    <table class="frames" padding="2">
       <tr> <td rowspan="2">
-	  <iframe src="meta_index.html" height="615" width="350" name="index"></iframe> </td><td> <iframe src="section/index.html" height="400" width="550" name="detail"></iframe> </td></tr>
-      <tr><td><iframe src="data/index.html" height="200" width="550" name="data"></iframe></td></tr>
+	  <iframe src="meta_index.html" name="index" id="frameIndex"></iframe> </td><td> <iframe src="section/index.html" name="detail" id="frameDetail"></iframe> </td></tr>
+      <tr><td><iframe src="data/index.html" name="data" id="frameData"></iframe></td></tr>
     </table>
 """
         ]
