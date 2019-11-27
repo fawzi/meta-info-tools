@@ -126,7 +126,7 @@ def cascade(
                 siteWriter.writeAll()
                 siteWriter.cleanupUnknown()
                 indexBody.append(
-                    f'<li><a href="{dName}/index.html"><label class="index">{dName}</label></a></li>\n'
+                    f'<li><label class="index">{dName}</label> <a href="{dName}/index.html" target="_top">frames</a>, <a href="{dName}/schema_info.html" target="_top">no frames</a></li>\n'
                 )
                 regenPaths.append(targetDir)
             except:
