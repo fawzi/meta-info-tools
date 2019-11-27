@@ -893,6 +893,45 @@ ul.index,li.index,label.index {}
         writeFile(p, self.schema.write)
         self.addGeneratedPath(p)
 
+    def writeSchemaInfo(self):
+        "Writes information on the current schema"
+        pOut = os.path.join(self.basePath, "schema_info.html")
+        body = []
+        s = self.schema
+        mInfo = s.metaInfo
+        body.append(f'<a href="../index.html" class="breadcrumb">schemas</a>')
+        body.append(f"<h1>Meta Info Schema for dictionary {s.mainDictionary}</h1>\n")
+        body.append("<h2>Included Dictionaries</h2>\n")
+        body.append("<ul>\n")
+        for dictName in sorted(s.dictionaries):
+            d = mInfo.dictionaries[dictName]
+            v = d.metadict_version
+            if v:
+                v = " " + v
+            else:
+                v = ""
+            descHtml = d.metadict_description
+            p = os.path.join(
+                self.basePath, f"../../meta_dictionary/{dictName}.meta_dictionary.json"
+            )
+            body.append(
+                f'<li><b>{dictName}{v}</b> (<a href="{p}">meta_dictionary.json</a>)<br>'
+            )
+            body.append(md2html(d.metadict_description, schema=s))
+            stats = [f"{t}: {v}" for t, v in sorted(d.stats().items())]
+            body.append(f"<div>{' '.join(stats)}</div>")
+            body.append("</li>\n")
+        body.append("</ul>\n")
+        body.append(
+            '<h2>Meta Info Reference</h2>\n<ul><li><a href="index.html" target="_top">frames</a></li><li><a href="meta_index.html" target="_top">no frames</a></li></ul>'
+        )
+        body.append("<h2>Schema</h2>\n<ul>")
+        body.append('<li><a href="meta_schema.json">meta_schema.json</a></li>')
+        body.append("</ul>")
+        self.writeLayout(
+            pOut, body, title=f"{s.mainDictionary} Meta Info Schema", basePath="."
+        )
+
     def writeAll(self):
         "Writes out the whole site"
         self.writeMetaIndex()
@@ -902,6 +941,7 @@ ul.index,li.index,label.index {}
         self.writeData()
         self.writePristine()
         self.writeIndex()
+        self.writeSchemaInfo()
         self.writeMetaSchema()
 
     def cleanupUnknown(self, pathNow=None, dirNow=None):

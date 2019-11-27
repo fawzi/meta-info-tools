@@ -741,6 +741,13 @@ class MetaDictionary(BaseModel):
     meta_info_entry: list = []  # List[MetaInfoEntry] = []
     meta_info_entries_cache: Optional[Dict[str, list]]  # List[MetaInfoEntry]]]
 
+    def stats(self):
+        "returns the number of meta info entries contained by type"
+        stats = {t.value: 0 for t in MetaType}
+        for e in self.meta_info_entry:
+            stats[e.meta_type.value] += 1
+        return stats
+
     @property
     def meta_info_entries(self):
         if self.meta_info_entries_cache is not None and len(
