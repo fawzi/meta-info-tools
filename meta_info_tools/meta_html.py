@@ -133,10 +133,16 @@ class DataDumper(DataVisitor):
         self.body = []
 
     def shouldVisitSection(self, path):
+        pathName = [e.name() for e in path]
         self.body.append(
-            f'<li><a href={pathToMetaDesc(path[-1].section, self.basePath)} target="detail" class="index"><label class="index">{path[-1].name()}</label></a>\n'
+            f'<li><a href={pathToMetaDesc(path[-1].section, self.basePath)} target="detail" class="index" id="IS-{".".join(pathName)}"><label class="index">{path[-1].name()}</label></a>\n'
         )
-        self.body += self.siteWriter.sectionIndex(path[-1], self.basePath)
+        sectionQualifier = ".".join(pathName[:-1])
+        if sectionQualifier:
+            sectionQualifier = sectionQualifier + "."
+        self.body += self.siteWriter.sectionIndex(
+            path[-1], self.basePath, sectionQualifier=sectionQualifier
+        )
         self.body.append(f"</li>\n")
         return True
 
@@ -154,8 +160,10 @@ class DataDumper(DataVisitor):
 class SiteWriter:
     """Writes out the html with the documentation for the given schema.
 	Creates the following structure at basePath:
-		
+	
 	index.html
+	schema_info.html
+	meta_schema.json
 	meta_index.html
 	meta/<xxx>.html
 	css/metaStyle.css
@@ -305,7 +313,7 @@ class SiteWriter:
                 self.writeMetaNameRedirect(aName)
                 metaDone.add(aName)
 
-    def sectionIndex(self, section, basePath, subSections=False):
+    def sectionIndex(self, section, basePath, subSections=False, sectionQualifier=""):
         """returns the html with the values, dimensions and optionally subsections of a section"""
         s = section
         sName = s.name()
@@ -326,21 +334,21 @@ class SiteWriter:
                 else:
                     dims = ""
                 body.append(
-                    f' <li class="subIndex" id="IV-{sName}-{vName}"><a href="{basePath}section/{sName}/value/{vName}.html" target="detail" class="index"><label class="subIndex">{vName} ({v.meta_data_type.value}{dims})</label></a></li>\n'
+                    f' <li class="subIndex" id="IV-{sectionQualifier}{sName}.{vName}"><a href="{basePath}section/{sName}/value/{vName}.html" target="detail" class="index"><label class="subIndex">{vName} ({v.meta_data_type.value}{dims})</label></a></li>\n'
                 )
             body.append("</ul>\n")
         if s.dimensions:
             body.append('<ul class="subIndex">\n')
             for vName, v in sorted(s.dimensions.items()):
                 body.append(
-                    f' <li class="subIndex" id="ID-{sName}-{vName}"><a href="{basePath}section/{sName}/dimension/{vName}.html" target="detail"><label class="subIndex">{vName} (dim)</label></a></li>\n'
+                    f' <li class="subIndex" id="ID-{sectionQualifier}{sName}.{vName}"><a href="{basePath}section/{sName}/dimension/{vName}.html" target="detail"><label class="subIndex">{vName} (dim)</label></a></li>\n'
                 )
             body.append("</ul>\n")
         if subSections and s.subSections:
             body.append('<ul class="subIndex subSection">\n')
             for subName, subS in sorted(s.subSections.items()):
                 body.append(
-                    f' <li class="subIndex subSection" id="IS-{subName}"><a href="{basePath}section/{subName}/index.html" target="detail"><label class="subIndex">{subName}</label></a></li>\n'
+                    f' <li class="subIndex subSection" id="IS-{sectionQualifier}{subName}"><a href="{basePath}section/{subName}/index.html" target="detail"><label class="subIndex">{subName}</label></a></li>\n'
                 )
             body.append("</ul>\n")
         return body
@@ -370,14 +378,14 @@ class SiteWriter:
             for vName, v in sorted(s.valueEntries.items()):
                 data.append(
                     {
-                        "id": f"IV-{sName}-{vName}",
+                        "id": f"IV-{sName}.{vName}",
                         "text": f"{vName} {MetaType.type_value.value} {v.meta_description}".lower(),
                     }
                 )
             for dName, d in sorted(s.dimensions.items()):
                 data.append(
                     {
-                        "id": f"ID-{sName}-{dName}",
+                        "id": f"ID-{sName}.{dName}",
                         "text": f"{dName} {MetaType.type_dimension.value} {d.meta_description}".lower(),
                     }
                 )
@@ -434,11 +442,17 @@ $('#filter').keyup(function() {
                 """
 a {
   font-weight: bold;
-  color: blue;
+  font-color: blue;
   text-decoration-line: none;
 }
 a:visited {
-  color: purple;
+  font-color: purple;
+}
+a.breadcrumb {
+  font-size: small;
+  border-radius: 0px 5px 5px 0px;
+  background-color: #DDDDDD;
+  padding: 1px 4px 1px 1px;
 }
 body.frames {
    margin: 0;            /* Reset default margin */
@@ -465,21 +479,21 @@ background-color: #AA;
 #frameIndex {
     display: block;       /* iframes are inline by default */
     border: none;         /* Reset default border */
-    height: 99vh;        /* Viewport-relative units */
+    height: 95vh;        /* Viewport-relative units */
     width: 39vw;
     background: #FAFAFA;
 }
 #frameDetail {
     display: block;       /* iframes are inline by default */
     border: none;         /* Reset default border */
-    height: 59vh;        /* Viewport-relative units */
+    height: 57vh;        /* Viewport-relative units */
     width: 59vw;
     background: #FAFAFA;
 }
 #frameData {
     display: block;       /* iframes are inline by default */
     border: none;         /* Reset default border */
-    height: 39vh;        /* Viewport-relative units */
+    height: 37vh;        /* Viewport-relative units */
     width: 59vw;
     background: #FAFAFA;
 }
@@ -500,29 +514,24 @@ ul.index,li.index,label.index {}
         mType = meta.meta_type
         body.append('<div class="breadcrumb">\n')
         if target:
-            t = ' target="{target}"'
+            t = f' target="{target}"'
         else:
             t = ""
         if mType == MetaType.type_abstract:
             pIndex = os.path.join(basePath, f"abstract/index.html")
             body.append(
-                f'<a href="{pIndex}" class="index label label-info"{t}>abstract types</a>:\n'
+                f'<a href="{pIndex}" class="breadcrumb"{t}>abstract types</a>:\n'
             )
         else:
             pIndex = os.path.join(basePath, f"section/index.html")
-            body.append(
-                f'<a href="{pIndex}" class="index label label-info"{t}>sections</a>:\n'
-            )
+            body.append(f'<a href="{pIndex}" class="breadcrumb"{t}>sections</a>:\n')
         if "meta_parent_section" in meta.allSetKeys():
             sParent = self.schema.sections[meta.meta_parent_section]
             for sName in sParent.meta_path.split("."):
                 sNow = self.schema.sections[sName]
                 body.append(
                     metaLink(
-                        sNow.section,
-                        basePath,
-                        target=target,
-                        htmlClass="label label-default",
+                        sNow.section, basePath, target=target, htmlClass="breadcrumb",
                     )
                     + "."
                 )
@@ -569,12 +578,12 @@ ul.index,li.index,label.index {}
         )
         for refAName in meta.meta_abstract_types:
             body.append(
-                f'  <span class="metaLink">{descLink(self.schema.abstractTypes[refAName].abstract_type,basePath=basePath)}</span>\n'
+                f'  <span class="metaLink">{metaLink(self.schema.abstractTypes[refAName].abstract_type,basePath=basePath)}</span>\n'
             )
         body.append(f"</div>")
         if mType == MetaType.type_section:
             sNow = ss.sections[metaName]
-            body.append("<h2>Content</h2>")
+            body.append("<h2>Section Contents</h2>")
             body += self.sectionIndex(sNow, basePath, subSections=True)
         body.append("<h2>Attributes</h2>")
         body.append('<dl class="metaValues">\n')
@@ -649,9 +658,23 @@ ul.index,li.index,label.index {}
                     body.append(
                         metaLink(ss.abstractTypes[aName].abstract_type, basePath) + "\n"
                     )
-        if mType == MetaType.type_section:
+        if mType != MetaType.type_abstract:
             body.append(f"<h2>Data</h2>\n")
             body.append(f"<h3>Pristine</h3>\n")
+            if mType == MetaType.type_section:
+                leafVal = ""
+            else:
+                sNow = self.schema.sections[meta.meta_parent_section]
+                if mType == MetaType.type_value:
+                    leafVal = (
+                        f'<a href="{{p}}#IV-{{dottedPath}}.{metaName}">{metaName}</a>\n'
+                    )
+                elif mType == MetaType.type_dimension:
+                    leafVal = (
+                        f'<a href="{{p}}#ID-{{dottedPath}}.{metaName}">{metaName}</a>\n'
+                    )
+                else:
+                    raise Exception(f"unexpected meta type {mType}")
             sects = sNow.meta_path.split(".")
             rootSect = sects[0]
             p = os.path.join(basePath, f"pristine/{rootSect}/index.html")
@@ -659,7 +682,10 @@ ul.index,li.index,label.index {}
                 ref = ".".join(sects[: i + 1])
                 if i > 0:
                     body.append(".")
-                body.append(f'<a href="{p}#S_{ref}" target="data">{v}</a>')
+                body.append(f'<a href="{p}#IS-{ref}" target="data">{v}</a>')
+            if leafVal:
+                body.append(".")
+                body.append(leafVal.format(p=p, dottedPath=".".join(sects)))
             if sNow.meta_instantiated_at:
                 instantiateTree = {}
                 for iPath in sNow.meta_instantiated_at:
@@ -673,6 +699,13 @@ ul.index,li.index,label.index {}
 
                 def addList(pathNow, levelNow):
                     if not levelNow:
+                        if pathNow and leafVal:
+                            p = os.path.join(basePath, f"data/{pathNow[0]}/index.html")
+                            body.append('<ul class=ïnstantations"><li>')
+                            body.append(
+                                leafVal.format(p=p, dottedPath=".".join(pathNow))
+                            )
+                            body.append("</li></ul>")
                         return
                     body.append('<ul class="instantiations">')
                     for elName, sub in sorted(levelNow.items()):
@@ -680,7 +713,7 @@ ul.index,li.index,label.index {}
                         p = os.path.join(basePath, f"data/{pathNew[0]}/index.html")
                         dottedPath = ".".join(pathNew)
                         body.append(
-                            f'<li><a href="{p}#S_{dottedPath}" target="data">{elName}</a>'
+                            f'<li><a href="{p}#IS-{dottedPath}" target="data">{elName}</a>'
                         )
                         addList(pathNew, sub)
                         body.append("</li>")
@@ -841,13 +874,15 @@ ul.index,li.index,label.index {}
     def writeIndex(self):
         "writes the main index"
         body = [
+            f'<div class="breadcrumb"><a href="../index.html" target="_top" class="breadcrumb">Meta Schema</a>/<a href="schema_info.html" target="detail" class="breadcrumb">{self.schema.mainDictionary}</a></div>\n',
             """
     <table class="frames" padding="2">
       <tr> <td rowspan="2">
-	  <iframe src="meta_index.html" name="index" id="frameIndex"></iframe> </td><td> <iframe src="section/index.html" name="detail" id="frameDetail"></iframe> </td></tr>
+	  <iframe src="meta_index.html" name="index" id="frameIndex"></iframe> </td>
+            <td> <iframe src="schema_info.html" name="detail" id="frameDetail"></iframe> </td></tr>
       <tr><td><iframe src="data/index.html" name="data" id="frameData"></iframe></td></tr>
     </table>
-"""
+""",
         ]
         p = os.path.join(self.basePath, "index.html")
         self.writeLayout(p, body, title="Index", basePath=".")
