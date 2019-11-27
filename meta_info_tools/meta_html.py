@@ -41,9 +41,7 @@ def metaLink(meta, basePath, target="detail", htmlClass="index"):
 
 def md2html(text, basePath="..", schema=None, raiseException=False):
     """Markdown to html conversion (and linking of meta_names)"""
-    metaNameRe = re.compile(
-        r"(\b[a-zA-Z0-9]*_[a-zA-Z0-9_]+\b|XXY[0-9]+YXX|\\.|\$[^$]*\$)"
-    )
+    metaNameRe = re.compile(r"(\b[a-zA-Z0-9]*_[a-zA-Z0-9_]+\b|XXY[0-9]+YXX|\$[^$]*\$)")
     xxxRe = re.compile(r"(XXY[0-9]+YXX)")
     metaRe = re.compile(r"(\b[a-zA-Z0-9]*_[a-zA-Z0-9_]+\b)")
     mathRe = re.compile(r"\$[^$]*\$")
@@ -74,6 +72,9 @@ def md2html(text, basePath="..", schema=None, raiseException=False):
             else:
                 backR[r] = toReplace
         elif mathRe.match(toReplace):
+            if toReplace == "$$":
+                repl[toReplace] = "$"
+                # no back replacement
             repl[toReplace] = r
             backR[r] = (
                 "<span class='maths'>"
@@ -82,7 +83,8 @@ def md2html(text, basePath="..", schema=None, raiseException=False):
             )
         else:
             repl[toReplace] = toReplace
-            backR[toReplace] = toReplace
+            if xxxRe.match(toReplace):
+                backR[toReplace] = toReplace
     logging.debug(f"md2html repl: {repl}")
     logging.debug(f"md2html backR: {backR}")
     for i in range(1, len(modif), 2):
