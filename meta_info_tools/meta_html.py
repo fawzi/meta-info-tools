@@ -75,12 +75,13 @@ def md2html(text, basePath="..", schema=None, raiseException=False):
             if toReplace == "$$":
                 repl[toReplace] = "$"
                 # no back replacement
-            repl[toReplace] = r
-            backR[r] = (
-                "<span class='maths'>"
-                + toReplace[1:-1].replace("<", "\\lt ").replace(">", "\\gt ")
-                + "</span>"
-            )
+            else:
+                repl[toReplace] = r
+                backR[r] = (
+                    "<span class='math'>"
+                    + toReplace[1:-1].replace("<", "\\lt ").replace(">", "\\gt ")
+                    + "</span>"
+                )
         else:
             repl[toReplace] = toReplace
             if xxxRe.match(toReplace):
