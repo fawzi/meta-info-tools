@@ -182,12 +182,13 @@ class SiteWriter:
 	pristine/<rootName>/index.html
 	"""
 
-    def __init__(self, schema, basePath):
+    def __init__(self, schema, basePath, katex=None):
         self.schema = schema
         self.basePath = basePath
         if not os.path.isdir(basePath):
             os.makedirs(basePath)
         self.generatedPaths = {}
+        self.katex = katex
 
     def addGeneratedPath(self, path):
         pNow = self.generatedPaths
@@ -202,13 +203,11 @@ class SiteWriter:
         self.generatedPaths = {}
 
     def writeLayout(
-        self, targetPath, body, title, basePath, bodyClass="meta", headExtra=None
+        self, targetPath, body, title, basePath, bodyClass="meta", extra={}
     ):
         """writes out the body into a full html page template"""
         if not basePath:
             basePath = "."
-        if not headExtra:
-            headExtra = ""
 
         def writer(outF):
             outF.write(
@@ -219,14 +218,14 @@ class SiteWriter:
 	  <title>{title}</title>
 	  <meta name="description" content="Meta info description">
 	  <meta name="author" content="meta_tool">
-	  <link rel="stylesheet" href="{basePath}/css/metaStyle.css">{headExtra}
+	  <link rel="stylesheet" href="{basePath}/css/metaStyle.css">{extra.get('headEnd', '')}
 	</head>
 	<body class="{bodyClass}">
 """
             )
             for l in body:
                 outF.write(l)
-            outF.write("</body>\n</html>\n")
+            outF.write(f"{extra.get('bodyEnd','')}</body>\n</html>\n")
 
         if not os.path.isdir(os.path.dirname(targetPath)):
             os.makedirs(os.path.dirname(targetPath))
@@ -316,17 +315,23 @@ class SiteWriter:
                 self.writeMetaNameRedirect(aName)
                 metaDone.add(aName)
 
-    def sectionIndex(self, section, basePath, subSections=False, sectionQualifier=""):
-        """returns the html with the values, dimensions and optionally subsections of a section"""
+    def sectionIndexEls(
+        self, section, basePath, subSections=False, sectionQualifier="", elTag="li"
+    ):
+        """returns a dictionary with html elTag (by default li) elements, for values, dimensions and subsections of section"""
         s = section
         sName = s.name()
-        body = []
+        res = {
+            "meta_value": [],
+            "meta_dimension": [],
+            "meta_sub_meta_names": [],
+        }
         if not basePath:
             basePath = ""
         elif not basePath.endswith("/"):
             basePath = basePath + "/"
         if s.valueEntries:
-            body.append('<ul class="subIndex">\n')
+            vals = res["meta_value"]
             for vName, v in sorted(s.valueEntries.items()):
                 if v.meta_dimension:
                     dims = (
@@ -336,23 +341,47 @@ class SiteWriter:
                     )
                 else:
                     dims = ""
-                body.append(
-                    f' <li class="subIndex" id="IV-{sectionQualifier}{sName}.{vName}"><a href="{basePath}section/{sName}/value/{vName}.html" target="detail" class="index"><label class="subIndex">{vName} ({v.meta_data_type.value}{dims})</label></a></li>\n'
+                vals.append(
+                    f' <{elTag} class="subIndex" id="IV-{sectionQualifier}{sName}.{vName}"><a href="{basePath}section/{sName}/value/{vName}.html" target="detail" class="index"><label class="subIndex">{vName} ({v.meta_data_type.value}{dims})</label></a></{elTag}>\n'
                 )
-            body.append("</ul>\n")
         if s.dimensions:
-            body.append('<ul class="subIndex">\n')
+            dims = res["meta_dimension"]
             for vName, v in sorted(s.dimensions.items()):
-                body.append(
-                    f' <li class="subIndex" id="ID-{sectionQualifier}{sName}.{vName}"><a href="{basePath}section/{sName}/dimension/{vName}.html" target="detail"><label class="subIndex">{vName} (dim)</label></a></li>\n'
+                dims.append(
+                    f' <{elTag} class="subIndex" id="ID-{sectionQualifier}{sName}.{vName}"><a href="{basePath}section/{sName}/dimension/{vName}.html" target="detail"><label class="subIndex">{vName} (dim)</label></a></{elTag}>\n'
                 )
-            body.append("</ul>\n")
         if subSections and s.subSections:
-            body.append('<ul class="subIndex subSection">\n')
+            subs = res["meta_sub_meta_names"]
             for subName, subS in sorted(s.subSections.items()):
-                body.append(
-                    f' <li class="subIndex subSection" id="IS-{sectionQualifier}{subName}"><a href="{basePath}section/{subName}/index.html" target="detail"><label class="subIndex">{subName}</label></a></li>\n'
+                subs.append(
+                    f' <{elTag} class="subIndex subSection" id="IS-{sectionQualifier}{subName}"><a href="{basePath}section/{subName}/index.html" target="detail"><label class="subIndex">{subName}</label></a></{elTag}>\n'
                 )
+        return res
+
+    def sectionIndex(self, section, basePath, subSections=False, sectionQualifier=""):
+        """returns the html with the values, dimensions and optionally subsections of a section"""
+        els = self.sectionIndexEls(section, basePath, subSections, sectionQualifier)
+        s = section
+        sName = s.name()
+        body = []
+        if not basePath:
+            basePath = ""
+        elif not basePath.endswith("/"):
+            basePath = basePath + "/"
+        if els["meta_value"]:
+            body.append('<ul class="subIndex">\n')
+            for el in els["meta_value"]:
+                body.append(el)
+            body.append("</ul>\n")
+        if els["meta_dimension"]:
+            body.append('<ul class="subIndex">\n')
+            for el in els["meta_dimension"]:
+                body.append(el)
+            body.append("</ul>\n")
+        if subSections and els["meta_sub_meta_names"]:
+            body.append('<ul class="subIndex subSection">\n')
+            for el in els["meta_sub_meta_names"]:
+                body.append(el)
             body.append("</ul>\n")
         return body
 
@@ -443,13 +472,20 @@ $('#filter').keyup(function() {
         def writer(outF):
             outF.write(
                 """
+.deprecated {
+color: red
+}
+.metaKey {
+  font-weight: bold;
+  font-size: small;
+}
 a {
   font-weight: bold;
-  font-color: blue;
+  color: #2A2A9A;
   text-decoration-line: none;
 }
 a:visited {
-  font-color: purple;
+  color: #4A2A99;
 }
 a.breadcrumb {
   font-size: small;
@@ -465,19 +501,42 @@ table.frames {
    border: none;
    width: 100%;
 }
+/* dl styling derived from Chad's comment on https://clicknathan.com/web-design/styling-html-5-description-lists-formerly-known-as-definition-lists-properly/ */
+dl {
+    display: flex;
+    flex-wrap: wrap;
+    width:100%;
+    min-width: 450px
+}
+dl > * {
+    padding-top: 0.5em;
+}
 dt {
-  font-weight: bold;
-  font-size: small;
+    width:30%;
+    font-weight: bold;
+    text-align:right;
+}
+dd {
+    width:60%;
+    padding-left:1em;
+    margin-left: 0px;
+}
+dd + dd {
+    width: 100%;
+    padding-left: calc(30% + 1em);
+}
+dt + dt {
+    padding-right: 60%;
+}
+dt + dt + dd {
+    margin-top: -1.625em; /* own height including padding */
+    padding-left: calc(30% + 1em);
 }
 h1.meta_name {
   text-align: center;
 }
 .label {
 background-color: #AA;
-}
-.metaKey {
-  font-weight: bold;
-  font-size: small;
 }
 #frameIndex {
     display: block;       /* iframes are inline by default */
@@ -503,7 +562,9 @@ background-color: #AA;
 ul.index,li.index,label.index {}
 .subIndex {}
 .rightTitle { text-align: right; }
-.metaValue {}
+.indented {
+    padding: 0em 1.5em 0em 1.5em;
+}
 .metaValues {}
 """
             )
@@ -560,36 +621,52 @@ ul.index,li.index,label.index {}
             "meta_parent_section",
             "meta_required",
             "meta_repeats",
+            "meta_deprecated",
             "meta_data_type",
+            "meta_abstract_types",
+            "meta_contains",
+            "meta_referenced_section",
         ]
         body = []
         body += self.breadcrumb(meta, basePath, target="detail", selfLink=None)
-        body.append(f'<h1 class="meta_name">{metaName}</h1>\n')
+        deprecated = ""
+        if meta.meta_deprecated:
+            deprecated = " deprecated"
+        body.append(f'<h1 class="meta_name{deprecated}">{metaName}</h1>\n')
         body.append(
             f'<h3 class="rightTitle">{mType.value} from {ss.dictionariesOf(metaName, metaType=mType)}</h3>\n'
         )
-        metaInfoPath = os.path.join(basePath, "../meta")
 
-        def descLink(name):
-            return f'<a href="{metaInfoPath}/section/meta_info_entry/value/{name}.html">{name}</a>'
+        def descLink(name, dict="meta"):
+            metaInfoPath = os.path.join(basePath, f"../{dict}")
+            return f'<a href="{metaInfoPath}/section/meta_info_entry/value/{name}.html" class="metaKey">{name}</a>'
 
-        body.append(f'<div class="metaKey">{descLink("meta_description")}</div>\n')
+        body.append(f"<dl>\n")
+        if deprecated:
+            body.append(
+                f'<dt class="deprecated">{descLink("meta_deprecated")}</dt><dd class="deprecated">true</dd>\n'
+            )
+        body.append(f'<dt>{descLink("meta_description")}</dt>\n')
         desc = md2html(meta.meta_description, schema=ss, basePath=basePath)
-        body.append(f'<div class="metaValue">{desc}</div>\n')
-        body.append(
-            f'<div class="metaKey">{descLink("meta_abstract_types")}</div>\n<div class="metaValue">'
-        )
+        body.append(f"<dd>{desc}</dd>\n")
+        body.append(f'<dt>{descLink("meta_abstract_types")}</dt>\n<dd>[')
+        first = True
         for refAName in meta.meta_abstract_types:
+            if first:
+                first = False
+            else:
+                body.append(",")
             body.append(
                 f'  <span class="metaLink">{metaLink(self.schema.abstractTypes[refAName].abstract_type,basePath=basePath)}</span>\n'
             )
-        body.append(f"</div>")
+        body.append(f"]</dd>")
         if mType == MetaType.type_section:
             sNow = ss.sections[metaName]
-            body.append("<h2>Section Contents</h2>")
-            body += self.sectionIndex(sNow, basePath, subSections=True)
-        body.append("<h2>Attributes</h2>")
-        body.append('<dl class="metaValues">\n')
+            els = self.sectionIndexEls(sNow, basePath, elTag="dd")
+            for k, ll in els.items():
+                if ll:
+                    body.append(f'<dt>{descLink(k, "meta_schema")}</dt>')
+                    body += ll
         if "meta_required" in keys:
             body.append(
                 f"<dt>{descLink('meta_required')}</dt><dd>{meta.meta_required}</dd>\n"
@@ -610,8 +687,8 @@ ul.index,li.index,label.index {}
                 f'<dt>{descLink("meta_data_type")}</dt><dd>{meta.meta_data_type.value}</dd>\n'
             )
         for k in keys.difference(handledKeys):
-            body.append(f'<dt class="metaValues">{descLink(k)}</dt>\n')
-            body.append(f'<dd class="metaValues">{getattr(meta,k)}</dd>\n')
+            body.append(f"<dt>{descLink(k)}</dt>\n")
+            body.append(f"<dd>{getattr(meta,k)}</dd>\n")
         body.append("</dl>\n")
         if mType == MetaType.type_abstract:
             aType = self.schema.abstractTypes[metaName]
@@ -663,7 +740,7 @@ ul.index,li.index,label.index {}
                     )
         if mType != MetaType.type_abstract:
             body.append(f"<h2>Data</h2>\n")
-            body.append(f"<h3>Pristine</h3>\n")
+            body.append(f'<h3>Pristine</h3><div class="indented">\n')
             if mType == MetaType.type_section:
                 leafVal = ""
             else:
@@ -689,6 +766,7 @@ ul.index,li.index,label.index {}
             if leafVal:
                 body.append(".")
                 body.append(leafVal.format(p=p, dottedPath=".".join(sects)))
+            body.append("</div>")
             if sNow.meta_instantiated_at:
                 instantiateTree = {}
                 for iPath in sNow.meta_instantiated_at:
@@ -726,18 +804,21 @@ ul.index,li.index,label.index {}
                 addList(pathNow=[], levelNow=instantiateTree)
         return body
 
-    def mathHead(self, basePath):
-        "returns html head to render math with katex"
-        return """
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/katex.min.css" integrity="sha384-zB1R0rpPzHqg7Kpt0Aljp8JPLqbXI3bhnPWROx27a9N0Ll6ZP/+DiW/UqRcLbRjq" crossorigin="anonymous">
-
-    <!-- The loading of KaTeX is deferred to speed up page rendering -->
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/katex.min.js" integrity="sha384-y23I5Q6l+B6vatafAwxRu/0oK/79VlbSz7Q9aiSZUvyWYIYsd+qj+o24G5ZU2zJz" crossorigin="anonymous"></script>
-
-    <!-- To automatically render math in text elements, include the auto-render extension: -->
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/contrib/auto-render.min.js" integrity="sha384-kWPLUVMOks5AQFrykwIup5lo0m3iMkkHrD0uJ4H5cjeGihAutqP0yW0J6dpFiVkI" crossorigin="anonymous"
-        onload="renderMathInElement(document.body);"></script>
-"""
+    def mathExtra(self, basePath):
+        "returns html head and scropt to render math in elements with class math with katex"
+        if self.katex:
+            return {
+                "headEnd": """
+<link rel="stylesheet" href="{katex}/katex.min.css">
+<script defer src="{katex}/katex.min.js" onload="var math = document.getElementsByClassName('math');for (var i = 0; i < math.length; i++) {  katex.render(math[i].textContent, math[i]); }" ></script>
+""",
+            }
+        return {
+            "headEnd": """
+   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/katex.min.css" integrity="sha384-zB1R0rpPzHqg7Kpt0Aljp8JPLqbXI3bhnPWROx27a9N0Ll6ZP/+DiW/UqRcLbRjq" crossorigin="anonymous">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.11.1/dist/katex.min.js" integrity="sha384-y23I5Q6l+B6vatafAwxRu/0oK/79VlbSz7Q9aiSZUvyWYIYsd+qj+o24G5ZU2zJz" crossorigin="anonymous" onload="var math = document.getElementsByClassName('math');for (var i = 0; i < math.length; i++) {  katex.render(math[i].textContent, math[i]); }" ></script>
+            """
+        }
 
     def abstractsIndex(self):
         """Returns the index of all abstract types"""
@@ -764,7 +845,7 @@ ul.index,li.index,label.index {}
                 body=body,
                 title=f"Abstract Type {aName}",
                 basePath=basePath,
-                headExtra=self.mathHead(basePath),
+                extra=self.mathExtra(basePath),
             )
 
     def sectionsIndex(self):
@@ -795,7 +876,7 @@ ul.index,li.index,label.index {}
                 body=body,
                 title=f"Section {sName}",
                 basePath=basePath,
-                headExtra=self.mathHead(basePath),
+                extra=self.mathExtra(basePath),
             )
             for vName, v in s.valueEntries.items():
                 basePath = "../../.."
@@ -806,7 +887,7 @@ ul.index,li.index,label.index {}
                     body=body,
                     title=f"Value {sName}",
                     basePath=basePath,
-                    headExtra=self.mathHead(basePath),
+                    extra=self.mathExtra(basePath),
                 )
             for dName, d in s.dimensions.items():
                 basePath = "../../.."
