@@ -155,6 +155,7 @@ class MetaType(Enum):
     type_value = "type-value"
     type_abstract = "type-abstract"
     type_section = "type-section"
+    type_constraint = "type-constraint"
 
 
 class EntryId(BaseModel):
@@ -271,6 +272,8 @@ class MetaInfoBase(BaseModel):
                 el = MetaSection(**dd)
             elif mtype == MetaType.type_dimension:
                 el = MetaDimensionValue(**dd)
+            elif mtype == MetaType.type_constraint:
+                el = MetaConstraint(**dd)
             else:
                 raise Exception(f"unexpected type {mtype} in {d}")
         except:
@@ -483,6 +486,55 @@ class MetaDimensionValue(MetaInfoBase):
             outF.write(
                 ',\n{ii}"meta_data_type": {value}'.format(
                     ii=ii, value=jd(self.meta_data_type.value)
+                )
+            )
+
+
+class MetaConstraint(MetaInfoBase):
+    "represents extra constraints on the meta_parent_section"
+    meta_type = MetaType.type_constraint
+    meta_parent_section: str
+    meta_constraint_select_query: Optional[str]
+    meta_constraint_required_query: Optional[str]
+    meta_constraint_expected_meta_info: List[str] = []
+
+    def allKeys(self):
+        return super().allKeys() + [
+            "meta_constraint_select_query",
+            "meta_constraint_required_query",
+            "meta_constraint_expected_meta_info",
+        ]
+
+    # @validator('meta_type')
+    def meta_type_correct(cls, v):
+        if v != MetaType.type_constraint:
+            raise ValidationError(
+                f"meta_type must be type-constraint for MetaConstraint"
+            )
+
+    def writeInternal(self, outF, indent):
+        ii = (indent + 2) * " "
+        outF.write(
+            ',\n{ii}"meta_parent_section": {value}'.format(
+                ii=ii, value=jd(self.meta_parent_section)
+            )
+        )
+        if self.meta_constraint_select_query:
+            outF.write(
+                ',\n{ii}"meta_constraint_select_query": {value}'.format(
+                    ii=ii, value=jd(self.meta_constraint_select_query)
+                )
+            )
+        if self.meta_constraint_required_query:
+            outF.write(
+                ',\n{ii}"meta_constraint_required_query": {value}'.format(
+                    ii=ii, value=jd(self.meta_constraint_required_query)
+                )
+            )
+        if self.meta_constraint_expected_meta_info:
+            outF.write(
+                ',\n{ii}"meta_constraint_expected_meta_info": {value}'.format(
+                    ii=ii, value=jd(self.meta_constraint_expected_meta_info)
                 )
             )
 
