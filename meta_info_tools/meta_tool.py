@@ -122,7 +122,7 @@ def cascade(
                 schema = MetaSchema.forDictionary(dName, mInfo)
 
                 targetDir = os.path.join(docsDir, dName)
-                siteWriter = SiteWriter(schema, targetDir)
+                siteWriter = SiteWriter(schema, targetDir, katex=args.katex)
                 siteWriter.writeAll()
                 siteWriter.cleanupUnknown()
                 indexBody.append(
@@ -224,7 +224,7 @@ def docCmd(args):
                 target_dir = os.path.join(target_dir, "doc")
             if args.delete_old_bk:
                 cleanDir(target_dir)
-            siteWriter = SiteWriter(schema, target_dir)
+            siteWriter = SiteWriter(schema, target_dir, katex=args.katex)
             siteWriter.writeAll()
             siteWriter.cleanupUnknown()
         except:
@@ -378,6 +378,11 @@ if __name__ == "__main__":
         type=str,
         help="path to the directory where to generate the documentation on the dictionaries",
     )
+    parser_cascade.add_argument(
+        "--katex",
+        type=str,
+        help="path or url to a directory containing katex.min.css and katex.min.js (otherwise a content delivery network is used)",
+    )
     checkArgs(parser_cascade)
     parser_cascade.set_defaults(func=cascadeCmd)
     # create the parser for the "rewrite" command
@@ -412,6 +417,11 @@ if __name__ == "__main__":
         "--target-dir",
         type=str,
         help="target dir if not given defaults to the directory of the first argument +/doc",
+    )
+    parser_doc.add_argument(
+        "--katex",
+        type=str,
+        help="path or url to a directory containing katex.min.css and katex.min.js (otherwise a content delivery network is used)",
     )
     parser_doc.add_argument(
         "inPath", type=str, nargs="+", help="a dictionary to document"

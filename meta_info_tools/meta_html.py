@@ -900,7 +900,7 @@ ul.index,li.index,label.index {}
                     body=body,
                     title=f"Dimension {sName}",
                     basePath=basePath,
-                    headExtra=self.mathHead(basePath),
+                    extra=self.mathExtra(basePath),
                 )
 
     def dataIndex(self):
