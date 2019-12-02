@@ -50,6 +50,23 @@ class TestMetaInfo(unittest.TestCase):
 	"meta_data_type": "int",
 	"meta_parent_section": "base_sect"
 }"""
+    constraintMin = """{
+	"meta_name": "test",
+	"meta_type": "type-constraint",
+	"meta_description": "test constraint description",
+	"meta_parent_section": "base_sect"
+}"""
+    constraintFull = """{
+	"meta_name": "test",
+	"meta_type": "type-constraint",
+	"meta_description": "test description",
+	"meta_deprecated": false,
+	"meta_abstract_types": ["test"],
+	"meta_parent_section": "base_sect",
+	"meta_constraint_select_query": "test_val1",
+	"meta_constraint_required_query": "test_val1=5",
+	"meta_constraint_expected_meta_info": [ "meta"]
+}"""
     valueMin = """{
   "meta_name":"metadict_require_version",
   "meta_description":[
@@ -173,6 +190,10 @@ class TestMetaInfo(unittest.TestCase):
     def test_dim(self):
         self.doTests(self.dimMin, MetaDimensionValue)
         self.doTests(self.dimFull, MetaDimensionValue)
+
+    def test_constraints(self):
+        self.doTests(self.constraintMin, MetaConstraint)
+        self.doTests(self.constraintFull, MetaConstraint)
 
     def test_section(self):
         self.doTests(self.sectionMin, MetaSection)
