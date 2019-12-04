@@ -552,6 +552,7 @@ class MetaValue(MetaInfoBase):
     meta_query_enum: Optional[List[MetaQueryEnum]]
     meta_range_expected: Optional[List[MetaRange]]
     meta_units: Optional[str]
+    meta_example: Optional[List[str]]
 
     def allKeys(self):
         return super().allKeys() + [
@@ -565,6 +566,7 @@ class MetaValue(MetaInfoBase):
             "meta_enum",
             "meta_range_expected",
             "meta_units",
+            "meta_example",
         ]
 
     # @validator('meta_type')
@@ -618,6 +620,12 @@ class MetaValue(MetaInfoBase):
             outF.write(
                 ',\n{ii}"meta_default_value": {value}'.format(
                     ii=ii, value=jd(self.meta_default_value)
+                )
+            )
+        if self.meta_example is not None:
+            outF.write(
+                ',\n{ii}"meta_example": {value}'.format(
+                    ii=ii, value=jd(self.meta_example)
                 )
             )
         first = True
@@ -689,6 +697,7 @@ class MetaSection(MetaInfoBase):
     meta_context_identifier: Optional[List[str]]
     meta_contains: Optional[List[str]]
     meta_inject: Optional[List[MetaInject]]
+    meta_example: Optional[List[str]]
 
     def allKeys(self):
         return super().allKeys() + [
@@ -699,6 +708,7 @@ class MetaSection(MetaInfoBase):
             "meta_context_identifier",
             "meta_contains",
             "meta_inject",
+            "meta_example",
         ]
 
     # @validator('meta_type')
@@ -745,6 +755,8 @@ class MetaSection(MetaInfoBase):
                     comma = ", "
                 i.write(outF, indent=indent + 2)
             outF.write(" ]")
+        if self.meta_example:
+            outF.write(f',\n{ii}"meta_example": {jd(self.meta_example)}')
 
 
 class MetaAbstract(MetaInfoBase):
