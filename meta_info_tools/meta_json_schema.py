@@ -109,13 +109,6 @@ class JsonSchemaDumper(object):
         if metaValue.meta_referenced_section:
             description += f"\nThis reference references section {repr(metaValue.meta_referenced_section)}.\n "
 
-        # meta_dimension: List[MetaDimension] = []
-        # meta_default_value: Optional[str]
-        # meta_enum: Optional[List[MetaEnum]]
-        # meta_query_enum: Optional[List[MetaQueryEnum]]
-        # meta_range_expected: Optional[List[MetaRange]]
-        # meta_units: Optional[str]
-
         if metaValue.meta_shape:
             dim = len(metaValue.meta_shape)
             val = self.arraySchema(baseType, dim)
@@ -124,7 +117,17 @@ class JsonSchemaDumper(object):
         if metaValue.meta_repeats:
             val = self.arraySchema(val)
         val["title"] = f"Value {metaValue.meta_parent_section}.{metaValue.meta_name}"
-        val["description"] = maybeJoinStr(metaValue.meta_description)
+        if metaValue.meta_default_value:
+            try:
+                v=json.loads(metaValue.meta_default_value)
+                val['default'] = v
+            except:
+                logging.exception(f'Error interpreting default value of {metaValue}')
+        if metaValue.meta_enum:
+            description += f'\nValid values:\n'
+            for enumVal in metaValue.meta_enum:
+                description += f'\n* {enumVal.meta_enum_value}: {maybeJoinStr(enumVal.meta_enum_description}\n'
+            val['enum']= [ enumVal.meta_enum_value for enumVal in metaValue.meta_enum ]
         if metaValue.meta_examples:
             examples = []
             for e in metaValue.meta_examples:
@@ -137,8 +140,69 @@ class JsonSchemaDumper(object):
                         )
             if examples:
                 val["examples"] = examples
+        if metaValue.meta_units:
+            description += f'\nunits: {metaValue.meta_units}\n'
+        if metaValue.meta_query_enum
+            description += f'\nmeta_query_enum: {metaValue.meta_query_enum}'
+        if metaValue.meta_range_expected
+            description += f'\nmeta_range_expected: {metaValue.meta_range_expected}'
+        val["description"] = description
         return val
 
-    def sectionSchema(self, section, strict=True):
+    def sectionSchema(self, section, strict=False):
+        prop={}
+        for vName, value in sorted(section.valueEntries.items())
+            vals[vName] = self.valueSchema(value)
+        required=[vName for vName, v in value.meta_required.items() if v.meta_required]
+        for sName, s in sorted(section.subSections.items()):
+            if strict:
+                prop[sName]=self.sectionSchema(s)
+            else:
+                prop[sName]={ "$ref": f"#/definitions/{sName}" }
         # handle value     meta_required: bool = False
-        return {}
+        res={
+            "title": f'Section {section.name()}',
+            "description": maybeJoinStr(section.section.meta_description),
+            "type": "object",
+            "properties": prop
+        }
+        if strict:
+            res["additionalProperties"]=false
+        else:
+            for sName in section.meta_possible_inject:
+                prop[sName]={ "$ref": f"#/definitions/{sName}" }
+        return res
+
+    def weakSchema(self, rootSections=None):
+        'A very compact schema, that might have extra injected subsection (recursive references possible). rootSections if given are to possible root sections that should be in the schema (if not given all root sections are used)'
+        if rootSections is None:
+            rootSections=sorted(self.rootSections.keys())
+        sections=set()
+        for rSName in rootSections.keys():
+            for path in self.schema.iterateDataPath([self.schema.sections[rSName]]]]):
+                sections.add(path[-1].name())
+        return {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "definitions": {
+                sName: self.sectionSchema(self.sections[sName], strict=False) for sName in sorted(sections)}
+            "anyOf": [
+                { "$ref": f'#/definitions/{sName}' } for sName in rootSections.keys() ]
+        }
+
+    def strictSchema(self, rootSections=None):
+        'A schema the does not allow recursive references and disallows extra properties'
+        if rootSections is None:
+            rootSections=sorted(self.rootSections.keys())
+        return {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "definitions": {
+                sName: self.sectionSchema(self.dataView[sName],strict=True) for sName in rootSections}
+            "anyOf": [
+                { "$ref": f'#/definitions/{sName}' } for sName in rootSections ]
+        }
+
+    def writeSchemas(self, basePath):
+        for rName in self.schema.rootSections.keys():
+            def writer(outF):
+                json.dump(outF, self.weakSchema([rName]), sort_keys=True)
+            
