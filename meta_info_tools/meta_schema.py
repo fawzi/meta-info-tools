@@ -614,9 +614,9 @@ class MetaSchema(BaseModel):
     def iterateDataPath(self, path):
         """Iterate on all sub section paths starting with the given path"""
         yield path
-        for sec in sorted(path[-1].subSections.items()):
+        for sName, sec in sorted(path[-1].subSections.items()):
             newPath = path + [sec]
-            yield from iterateDataPath(newPath)
+            yield from self.iterateDataPath(newPath)
 
     def loopIds(self):
         "Loops on all entries ids"
