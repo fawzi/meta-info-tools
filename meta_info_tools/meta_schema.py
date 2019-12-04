@@ -19,10 +19,18 @@ class MetaSchemaSection(BaseModel):
     instantiatedCopies: dict  # Dict[str,obj]# 'MetaSchemaSection']
     dimensions: Dict[str, MetaDimensionValue]
     injectionBase: Optional[str]
+    possibleInject: Set[str]
     meta_path: Optional[str]
+
+    def addPossibleInject(self, injectedSectionName):
+        self.possibleInject.add(injectedSectionName)
 
     def name(self):
         return self.section.meta_name
+
+    @property
+    def meta_possible_inject(self):
+        return sorted(self.possibleInject)
 
     @property
     def meta_sub_section_name(self):
@@ -122,6 +130,13 @@ class MetaSchemaSection(BaseModel):
         comma = ""
         outF.write(f',\n{ii}  "meta_instantiated_at": [')
         for el in self.meta_instantiated_at:
+            outF.write(f"{comma}\n{ii}    {jd(el)}")
+            if not comma:
+                comma = ", "
+        outF.write(f"]")
+        comma = ""
+        outF.write(f',\n{ii}  "meta_possible_inject": [')
+        for el in self.meta_possible_inject:
             outF.write(f"{comma}\n{ii}    {jd(el)}")
             if not comma:
                 comma = ", "
@@ -519,6 +534,7 @@ class MetaSchema(BaseModel):
                     instantiatedCopies={},
                     subSections={},
                     dimensions={},
+                    possibleInject=set(),
                 )
                 self.sections[sAttName] = newSection
                 if sectionPath:
@@ -724,6 +740,7 @@ class MetaSchema(BaseModel):
                         dottedPath = ".".join(pastSectNames)
                         injectedSection = sToAdd.copyToInject(dottedPath)
                         path[-1].subSections[sName] = injectedSection
+                        self.schema.sections[sec.name()].addPossibleInject(sName)
                         pathsToCheck.append(path + [injectedSection])
                 for sToI in secToInject:
                     if (
@@ -741,6 +758,7 @@ class MetaSchema(BaseModel):
                         dottedPath = ".".join(pastSectNames)
                         injectedSection = sToI.copyToInject(dottedPath)
                         path[-1].subSections[sToI.sect.name()] = injectedSection
+                        self.schema.sections[sec.name()].addPossibleInject(sName)
                         pathsToCheck.append(path + [injectedSection])
                 return True
 
