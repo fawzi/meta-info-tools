@@ -930,11 +930,14 @@ class MetaDictionary(BaseModel):
         os.chdir(dNow)
         written = set()
         for el in self.meta_info_entry:
-            fName = el.meta_name + ".meta_info_entry.json"
             if el.meta_type == MetaType.type_section:
-                fName = os.path.join(el.meta_name, fName)
+                fName = os.path.join(el.meta_name, "_.meta_info_entry.json")
             elif "meta_parent_section" in el.allSetKeys():
-                fName = os.path.join(el.meta_parent_section, fName)
+                fName = os.path.join(
+                    el.meta_parent_section, el.meta_name + ".meta_info_entry.json"
+                )
+            else:
+                fName = el.meta_name + ".meta_info_entry.json"
             written.add(fName)
             writeFile(os.path.join(dir, fName), lambda outF: el.write(outF))
         timestamp = date.today().isoformat()
@@ -1047,6 +1050,8 @@ class MetaDictionary(BaseModel):
         entries = []
         for f in entriesNames:
             entryExpectedName = os.path.basename(f)[: -len(".meta_info_entry.json")]
+            if entryExpectedName == "_":
+                entryExpectedName = os.path.basename(os.path.dirname(f))
             entryPath = os.path.join(path, f)
             with open(entryPath, encoding="utf8") as fIn:
                 try:
