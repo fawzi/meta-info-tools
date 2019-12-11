@@ -4,6 +4,7 @@
 # version/ sections
 from .meta_schema import MetaSchema, DataVisitor
 from .meta_info import MetaType, writeFile, safeRemove, maybeJoinStr
+from .meta_json_schema import writeAllSchemas
 import io, re, os, json, logging
 import markdown
 
@@ -1010,11 +1011,24 @@ ul.index,li.index,label.index {}
             '<h2>Meta Info Reference</h2>\n<ul><li><a href="index.html" target="_top">frames</a></li><li><a href="meta_index.html" target="_top">no frames</a></li></ul>'
         )
         body.append("<h2>Schema</h2>\n<ul>")
-        body.append('<li><a href="meta_schema.json">meta_schema.json</a></li>')
-        body.append("</ul>")
+        body.append('<li><a href="meta_schema.json">meta_schema.json</a></li>\n')
+        body.append("</ul>\n")
+        body.append("<h3>Json Schemas</h3>\n<ul>\n")
+        for rName in sorted(self.schema.rootSections.keys()):
+            baseP = "./"
+            body.append(
+                f'  <li><label>{rName}</label> (recursive: <a href="{baseP}json-schema-recursive-suspendable/{rName}.json-schema.json">suspendable</a>, <a href="{baseP}json-schema-recursive-simple/{rName}.json-schema.json">simple</a>; strict: <a href="{baseP}json-schema-strict-suspendable/{rName}.json-schema.json">suspendable</a>, <a href="{baseP}json-schema-strict-simple/{rName}.json-schema.json">simple</a>)</li>\n'
+            )
+        body.append("</ul>\n")
         self.writeLayout(
             pOut, body, title=f"{s.mainDictionary} Meta Info Schema", basePath="."
         )
+
+    def writeJsonSchema(self):
+        for p in writeAllSchemas(
+            self.schema, self.basePath, pre="json-schema-", writeLayout=self.writeLayout
+        ):
+            self.addGeneratedPath(p)
 
     def writeAll(self):
         "Writes out the whole site"
@@ -1025,6 +1039,7 @@ ul.index,li.index,label.index {}
         self.writeData()
         self.writePristine()
         self.writeIndex()
+        self.writeJsonSchema()
         self.writeSchemaInfo()
         self.writeMetaSchema()
 

@@ -5,7 +5,7 @@ from datetime import date
 import hashlib, logging
 import json, tempfile
 import re, io, stat
-import os, os.path
+import os, os.path, glob
 
 jd = lambda x: json.dumps(x, sort_keys=True, ensure_ascii=True)
 from collections import namedtuple
@@ -56,6 +56,8 @@ def writeFile(targetPath, writer):
     dir = os.path.dirname(targetPath)
     if not dir:
         dir = "."
+    if not os.path.exists(dir):
+        os.makedirs(dir)
     with tempfile.NamedTemporaryFile(
         mode="w", encoding="utf8", suffix=".tmp", prefix=name, dir=dir, delete=False
     ) as outF:
@@ -922,10 +924,17 @@ class MetaDictionary(BaseModel):
             os.path.join(dir, "_.meta_dictionary.json"),
             lambda outF: self.write(outF, writeMetaInfoEntries=False),
         )
-        present = {f for f in os.listdir(dir) if f.endswith(".meta_info_entry.json")}
+        dNow = os.getcwd()
+        os.chdir(dir)
+        present = set(glob.glob("**/*.meta_info_entry.json", recursive=True))
+        os.chdir(dNow)
         written = set()
         for el in self.meta_info_entry:
             fName = el.meta_name + ".meta_info_entry.json"
+            if el.meta_type == MetaType.type_section:
+                fName = os.path.join(el.meta_name, fName)
+            elif "meta_parent_section" in el.allSetKeys():
+                fName = os.path.join(el.meta_parent_section, fName)
             written.add(fName)
             writeFile(os.path.join(dir, fName), lambda outF: el.write(outF))
         timestamp = date.today().isoformat()
@@ -1031,12 +1040,13 @@ class MetaDictionary(BaseModel):
             if not uri in uris:
                 uris.insert(0, uri)
         baseDict["metadict_source"] = uris
-        entriesNames = [
-            f for f in os.listdir(path) if f.endswith(".meta_info_entry.json")
-        ]
+        dNow = os.getcwd()
+        os.chdir(path)
+        entriesNames = glob.glob("**/*.meta_info_entry.json", recursive=True)
+        os.chdir(dNow)
         entries = []
         for f in entriesNames:
-            entryExpectedName = f[: -len(".meta_info_entry_json")]
+            entryExpectedName = os.path.basename(f)[: -len(".meta_info_entry.json")]
             entryPath = os.path.join(path, f)
             with open(entryPath, encoding="utf8") as fIn:
                 try:

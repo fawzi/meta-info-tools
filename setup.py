@@ -15,6 +15,7 @@ setuptools.setup(
     packages=setuptools.find_packages(include=["meta_info_tools", "meta_info_tools.*"]),
     install_requires=["Markdown>=3.1.1", "pydantic>=0.28"],
     extra_require=["black", "pytest"],
+    test_require=["jsonschema"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
