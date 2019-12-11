@@ -819,7 +819,7 @@ class MetaSchema(BaseModel):
         oldDeps = self.dictionaries
         toDo = newDeps
         if oldDeps.difference(newDeps):
-            logging.warn(
+            logging.warning(
                 f"extendending {self.mainDictionary} to {newDictName} that is not a superset will leave extra dictionaries in the schema"
             )
         self.dictionaries = self.dictionaries.union(newDeps)

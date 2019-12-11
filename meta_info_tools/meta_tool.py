@@ -58,7 +58,7 @@ def cascade(
         for dFile in os.listdir(explodedDir):
             try:
                 if not dFile.endswith(".meta_dictionary"):
-                    logging.warn(f"Ignoring unknown entry {dFile}")
+                    logging.warning(f"Ignoring unknown entry {dFile}")
                 else:
                     dPath = os.path.join(explodedDir, dFile)
                     d = MetaDictionary.loadAtPath(dPath)
@@ -85,7 +85,7 @@ def cascade(
                 name = dFile[: -len(".meta_dictionary.json")]
                 if not dFile.endswith(".meta_dictionary.json"):
                     if not dFile.endswith(".bk"):
-                        logging.warn(f"Ignoring unexpected entry {dFile}")
+                        logging.warning(f"Ignoring unexpected entry {dFile}")
                 elif name not in dictDone:
                     dPath = os.path.join(dictionaryDir, dFile)
                     d = MetaDictionary.loadAtPath(dPath)
@@ -120,7 +120,6 @@ def cascade(
         for dName, d in sorted(mInfo.dictionaries.items()):
             try:
                 schema = MetaSchema.forDictionary(dName, mInfo)
-
                 targetDir = os.path.join(docsDir, dName)
                 siteWriter = SiteWriter(schema, targetDir, katex=args.katex)
                 siteWriter.writeAll()
@@ -258,7 +257,7 @@ def checkWithArgs(schema, args):
         doChecks(schema, nameCheckLevel=args.name_check, clashKinds=clashWarn)
     except ClashException as err:
         clashes = "\n  ".join([str(e) for e in err.clashes])
-        logging.warn(
+        logging.warning(
             f"Discouraged name clashes detected in schema for dictionary {schema.mainDictionary}:\n  {clashes}"
         )
 

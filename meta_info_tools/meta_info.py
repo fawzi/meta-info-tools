@@ -76,7 +76,7 @@ def safeRemove(toRm):
     """moves the give files to a backup (unless they already are a backup (.bk))"""
     for el in toRm:
         if not os.path.exists(el):
-            logging.warn(f"cannot remove non existing {el}")
+            logging.warning(f"cannot remove non existing {el}")
         elif not el.endswith(".bk"):
             timestamp = date.today().isoformat()
             dir, f = os.path.split(el)
@@ -1021,7 +1021,7 @@ class MetaDictionary(BaseModel):
                 raise Exception(f"Invalid json in {baseInfoPath}")
         baseDict["metadict_name"] = baseDict.get("metadict_name", expectedName)
         if baseDict["metadict_name"] != expectedName:
-            logging.warn(
+            logging.warning(
                 f'Inconsistent dictionary name from filename {expectedName} vs {baseDict["metadict_name"]} in {baseInfoPath}'
             )
         p2 = os.path.realpath(os.path.abspath(path))

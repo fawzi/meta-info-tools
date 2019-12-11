@@ -104,7 +104,7 @@ def md2html(text, basePath="..", schema=None, raiseException=False):
     for i in range(1, len(splitRes), 2):
         placeholder = splitRes[i]
         if not placeholder in backR:
-            logging.warn(
+            logging.warning(
                 f"Unknown placeholder {repr(placeholder)} when evaluating markdown"
             )
         else:
@@ -1043,6 +1043,6 @@ ul.index,li.index,label.index {}
         for f, sub in dirNow.items():
             p = os.path.join(pathNow, f)
             if f == "." or f == "..":
-                logging.warn(f"generatedFiles contains {f}")
+                logging.warning(f"generatedFiles contains {f}: {pathNow} {f} {sub}")
             elif os.path.isdir(p):
                 self.cleanupUnknown(p, sub)
