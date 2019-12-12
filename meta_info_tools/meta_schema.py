@@ -261,6 +261,7 @@ class MetaSchemaSection(BaseModel):
                 "subSections": subS,
                 "instantiatedCopies": {},
                 "injectionBase": injectionBase,
+                "possibleInject": set(),
             }
         )
         if subBase in self.instantiatedCopies:
