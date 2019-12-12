@@ -427,18 +427,29 @@ class ConcreteTypeDefiner(DataVisitor):
             schema.visitDataPath([sec], newVisitor)
 
     def defineType(self, path, typeName, superName, renames):
-        typeDumper(path, typeName, superName, renames)
+        self.typeDumper(path, typeName, superName, renames)
 
     def didVisitSection(self, path):
         namePath = ".".join([el.name() for el in path]) + "."
         parentPath = ".".join([el.name() for el in path[:-1]]) + "."
         renames = self.pathNames.get(namePath, {})
         sec = path[-1]
-        injected = False
-        for s in path:
-            if s.isInjected():
-                injected = True
-        if injected:
+        topLevel = len(path) == 1
+        if topLevel:
+            secName = sec.name()
+            if secName in self.knownTypes:
+                raise Exception(
+                    f"Normal non injected unmodified section {sec.name()} should not have been dumped yet, but is in knownTypes"
+                )
+            else:
+                self.knownTypes[secName] = KnownTypes(secName, secName)
+            self.defineType(path, typeName=secName, superName=None, renames=renames)
+        else:  # non top level
+            if topLevel:
+                self.knownTypes[sec.name()] = KnownTypes(sec.name(), sec.name())
+                self.defineType(
+                    path, typeName=sec.name(), superName="", renames=renames
+                )
             if renames:
                 v = json.dumps(renames, order_keys=True, ensure_ascii=False)
                 checksum = base64.b32encode(hashlib.sha512(v.encode("utf8")).digest())[
@@ -451,7 +462,7 @@ class ConcreteTypeDefiner(DataVisitor):
                 while i < len(fullName):
                     shortName = fullName[:i]
                     existing = self.knownTypes.get(shortName)
-                    if not existing:
+                    if not existing and shortName not in self.schema.sections:
                         self.knownTypes[shortName] = newTypeInfo
                         break
                     elif existing == newTypeInfo:
@@ -466,21 +477,8 @@ class ConcreteTypeDefiner(DataVisitor):
                     self.defineType(
                         path, typeName=shortName, superName=sec.name(), renames=renames
                     )
-            elif not sec.name() in self.knownTypes:
-                raise Exception(
-                    f"Internal error unmodified section {sec.name()} from {namePath[:-1]} is not in knownTypes (should have been dumped already)"
-                )
             else:
                 pass
-        else:  # non injected
-            secName = sec.name()
-            if secName in self.knownTypes:
-                raise Exception(
-                    f"Normal non injected unmodified section {sec.name()} should not have been dumped yet, but is in knownTypes"
-                )
-            else:
-                self.knownTypes[secName] = KnownTypes(secName, secName)
-            self.defineType(path, typeName=secName, superName=None, renames=renames)
 
 
 SectToInject = namedtuple(

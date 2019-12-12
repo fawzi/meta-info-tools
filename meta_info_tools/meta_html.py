@@ -1017,7 +1017,7 @@ ul.index,li.index,label.index {}
         for rName in sorted(self.schema.rootSections.keys()):
             baseP = "./"
             body.append(
-                f'  <li><label>{rName}</label> (recursive: <a href="{baseP}json-schema-recursive-suspendable/{rName}.json-schema.json">suspendable</a>, <a href="{baseP}json-schema-recursive-simple/{rName}.json-schema.json">simple</a>; strict: <a href="{baseP}json-schema-strict-suspendable/{rName}.json-schema.json">suspendable</a>, <a href="{baseP}json-schema-strict-simple/{rName}.json-schema.json">simple</a>)</li>\n'
+                f'  <li><label>{rName}</label> (recursive: <a href="{baseP}json-schema-recursive-suspendable/{rName}.json-schema.json">suspendable</a>, <a href="{baseP}json-schema-recursive-simple/{rName}.json-schema.json">simple</a>)</li>\n'
             )
         body.append("</ul>\n")
         self.writeLayout(

@@ -1,4 +1,4 @@
-from .meta_schema import MetaSchema
+from .meta_schema import MetaSchema, ConcreteTypeDefiner
 from .meta_info import MetaDataType, writeFile, maybeJoinStr
 import os, os.path, json
 
@@ -157,60 +157,91 @@ class JsonSchemaDumper(object):
                 f"\nmeta_range_expected: {metaValue.meta_range_expected}"
             )
         val["description"] = "".join(description)
+        if not metaValue.meta_required:
+            return {"anyOf": [val, {"type": "null"}]}
         return val
 
-    def sectionSchema(self, section, strict=False, suspendable=True):
+    def typeDumper(self, path, typeName, superName, renames, suspendable, strict):
+        section = path[-1]
         prop = {}
         for vName, value in sorted(section.valueEntries.items()):
-            prop[vName] = self.valueSchema(value)
+            prop[vName] = self.valueSchema(value, suspendable=suspendable)
         required = [
             vName
             for vName, v in sorted(section.valueEntries.items())
             if v.meta_required
+        ] + [
+            vName
+            for vName, v in sorted(section.subSections.items())
+            if v.section.meta_required
         ]
         for sName, s in sorted(section.subSections.items()):
-            if strict:
-                prop[sName] = self.sectionSchema(
-                    s, strict=strict, suspendable=suspendable
-                )
-            else:
-                prop[sName] = {"$ref": f"#/definitions/{sName}"}
-        # handle value     meta_required: bool = False
-        res = {
+            prop[sName] = {"$ref": f"#/definitions/S_{renames.get(sName,sName)}"}
+        if not strict:
+            for sName in section.meta_possible_inject:
+                prop[sName] = {"$ref": f"#/definitions/S_{sName}"}
+        tSchema = {
             "title": f"Section {section.name()}",
             "description": maybeJoinStr(section.section.meta_description),
             "type": "object",
             "properties": prop,
         }
         if strict:
-            res["additionalProperties"] = False
-        else:
-            for sName in section.meta_possible_inject:
-                prop[sName] = {"$ref": f"#/definitions/{sName}"}
+            tSchema["additionalProperties"] = False
+        sSchema = {"$ref": f"#/definitions/T_{typeName}"}
         if section.section.meta_repeats:
-            res = self.arraySchema(res, suspendable=suspendable, directValue=True)
+            sSchema = self.arraySchema(
+                sSchema, suspendable=suspendable, directValue=True
+            )
+        res = {f"T_{typeName}": tSchema, f"S_{typeName}": sSchema}
         return res
 
     def jsonSchema(self, rootSections=None, strict=False, suspendable=True):
         "A very compact schema, that might have extra injected subsection (recursive references possible). rootSections if given are to possible root sections that should be in the schema (if not given all root sections are used)"
         if rootSections is None:
             rootSections = sorted(self.schema.rootSections.keys())
+        definitions = {}
         if strict:
-            sections = {sName: self.schema.dataView[sName] for sName in rootSections}
+            assert 0, "still buggy, to finish"
+            definer = ConcreteTypeDefiner(
+                self.schema,
+                typeDumper=lambda path, typeName, superName, renames: definitions.update(
+                    self.typeDumper(
+                        path,
+                        typeName,
+                        superName,
+                        renames,
+                        suspendable=suspendable,
+                        strict=strict,
+                    )
+                ),
+                knownTypes=None,
+            )
+            for sName in rootSections:
+                sec = self.schema.dataView[sName]
+                self.schema.visitDataPath([sec], definer)
         else:
-            sNames = set()
-            for rSName in rootSections:
-                for path in self.schema.iterateDataPath([self.schema.dataView[rSName]]):
-                    sNames.add(path[-1].name())
-            sections = {sName: self.schema.sections[sName] for sName in sorted(sNames)}
-        return {
+            sectsToDo = set(rootSections)
+            sectsDone = set()
+            while sectsToDo:
+                sNow = sectsToDo.pop()
+                s = self.schema.sections[sNow]
+                toAdd = set(s.subSections.keys()).union(s.possibleInject)
+                sectsDone.add(sNow)
+                sectsToDo.update(toAdd.difference(sectsDone))
+                if f"S_{sNow}" not in definitions:
+                    s = self.schema.sections[sNow]
+                    definitions.update(
+                        self.typeDumper(
+                            [s], sNow, "", {}, strict=False, suspendable=suspendable,
+                        )
+                    )
+        res = {
             "$schema": "http://json-schema.org/draft-07/schema#",  # "http://json-schema.org/draft/2019-09/schema",
-            "definitions": {
-                sName: self.sectionSchema(s, strict=strict, suspendable=suspendable)
-                for sName, s in sorted(sections.items())
-            },
-            "anyOf": [{"$ref": f"#/definitions/{sName}"} for sName in rootSections],
+            "definitions": definitions,
+            "anyOf": [{"$ref": f"#/definitions/S_{sName}"} for sName in rootSections],
         }
+        return res
 
     def writeSchemas(
         self, basePath, strict=True, suspendable=True, writeLayout=None, baseUri=".."
@@ -264,7 +295,7 @@ def writeAllSchemas(schema, basePath, pre="", writeLayout=None, baseUri=".."):
     """writes a recursive schema, a strict schena both suspendable and not"""
     generatedPaths = []
     dumper = JsonSchemaDumper(schema)
-    for strict in [True, False]:
+    for strict in [False]:
         if strict:
             strictName = "strict"
         else:
