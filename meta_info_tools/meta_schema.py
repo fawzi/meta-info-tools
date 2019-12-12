@@ -412,7 +412,7 @@ class ConcreteTypeDefiner(DataVisitor):
 	Typically you will want to just use the visitTypes class method and forget about this type."""
 
     def __init__(self, schema, typeDumper, knownTypes=None):
-        if self.knownTypes:
+        if knownTypes:
             self.knownTypes = knownTypes
         else:
             self.knownTypes = {}
