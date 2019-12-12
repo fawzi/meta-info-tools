@@ -54,12 +54,12 @@ class JsonSchemaDumper(object):
             arrType = {"type": "array", "items": arrType}
         if suspendable:
             if directValue:
-                return {"oneOf": [arrType, dictType, baseType]}
+                return {"anyOf": [arrType, dictType, baseType]}
             else:
-                return {"oneOf": [arrType, dictType]}
+                return {"anyOf": [arrType, dictType]}
         else:
             if directValue:
-                return {"oneOf": [arrType, baseType]}
+                return {"anyOf": [arrType, baseType]}
             else:
                 return arrType
 
@@ -98,8 +98,8 @@ class JsonSchemaDumper(object):
                         "additionalItems": False,
                     },
                     "base64_data": {
-                        "oneOf": [
-                            "string",
+                        "anyOf": [
+                            {"type": "string"},
                             {"type": "array", "items": {"type": "string"}},
                         ],
                         "description": "Base 64 encoded binary data either a single string or as an array of strings",
