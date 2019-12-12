@@ -275,7 +275,7 @@ class JsonSchemaDumper(object):
                         ),
                         outF,
                         sort_keys=True,
-                        indent=2,
+                        indent=1,
                     ),
                 )
                 generatedPaths.append(p)
