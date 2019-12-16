@@ -996,9 +996,7 @@ ul.index,li.index,label.index {}
             else:
                 v = ""
             descHtml = d.metadict_description
-            p = os.path.join(
-                self.basePath, f"../../meta_dictionary/{dictName}.meta_dictionary.json"
-            )
+            p = f"../../meta_dictionary/{dictName}.meta_dictionary.json"
             body.append(
                 f'<li><b>{dictName}{v}</b> (<a href="{p}">meta_dictionary.json</a>)<br>'
             )
