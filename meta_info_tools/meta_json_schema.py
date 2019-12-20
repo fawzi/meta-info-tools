@@ -1,6 +1,81 @@
-from .meta_schema import MetaSchema, ConcreteTypeDefiner
+from .meta_schema import MetaSchema, DataVisitor
 from .meta_info import MetaDataType, writeFile, maybeJoinStr
 import os, os.path, json
+import base64, hashlib
+from collections import namedtuple
+
+KnownTypes = namedtuple("KnownTypes", ["sectionName", "fullTypeName"])
+
+
+class ConcreteTypeDefiner(DataVisitor):
+    """Visits the types in the reverse order so that no forward declaration is needed.
+        Type dumper should dump the definition for the the full type if superName is None, and just the renames otherwise.
+        A full dump must still respect the renames, hey give a mapping section > name of the type.
+        The name of the type must still be changed in most languages to avoid clashes with field names.
+        Typically you will want to just use the visitTypes class method and forget about this type."""
+
+    def __init__(self, schema, typeDumper, knownTypes=None):
+        self.schema = schema
+        if knownTypes:
+            self.knownTypes = knownTypes
+        else:
+            self.knownTypes = {}
+        self.typeDumper = typeDumper
+        self.pathNames = {}
+
+    @classmethod
+    def visitTypes(cls, schema, typeDumper, knownTypes=None):
+        newVisitor = cls(schema, typeDumper, knownTypes)
+        for secName, sec in ordered(schema.partialSections().items()):
+            schema.visitDataPath([sec], newVisitor)
+        for secName, sec in ordered(schema.fullRootSections().items()):
+            schema.visitDataPath([sec], newVisitor)
+
+    def defineType(self, path, typeName, superName, renames):
+        self.typeDumper(path, typeName, superName, renames)
+
+    def didVisitSection(self, path):
+        namePath = ".".join([el.name() for el in path]) + "."
+        parentPath = ".".join([el.name() for el in path[:-1]]) + "."
+        renames = self.pathNames.get(namePath, {})
+        sec = path[-1]
+        topLevel = len(path) == 1
+        if topLevel:
+            secName = sec.name()
+            if secName in self.knownTypes:
+                raise Exception(
+                    f"Normal non injected unmodified section {sec.name()} should not have been dumped yet, but is in knownTypes"
+                )
+            else:
+                self.knownTypes[secName] = KnownTypes(secName, secName)
+            self.defineType(path, typeName=secName, superName=None, renames=renames)
+        else:  # non top level
+            v = json.dumps(renames, sort_keys=True, ensure_ascii=False)
+            checksum = base64.b32encode(hashlib.sha512(v.encode("utf8")).digest())[
+                :-1
+            ].decode("ascii")
+            fullName = sec.name() + "_" + checksum
+            newTypeInfo = KnownTypes(sec.name(), fullName)
+            i = len(sec.name()) + 2
+            alreadyDumped = False
+            while i < len(fullName):
+                shortName = fullName[:i]
+                existing = self.knownTypes.get(shortName)
+                if not existing and shortName not in self.schema.sections:
+                    self.knownTypes[shortName] = newTypeInfo
+                    break
+                elif existing == newTypeInfo:
+                    alreadyDumped = True
+                    break
+                else:
+                    i += 1
+            parentRenames = self.pathNames.get(parentPath, {})
+            parentRenames[sec.name()] = shortName
+            self.pathNames[parentPath] = parentRenames
+            if not alreadyDumped:
+                self.defineType(
+                    path, typeName=shortName, superName=sec.name(), renames=renames
+                )
 
 
 class JsonSchemaDumper(object):
@@ -13,17 +88,26 @@ class JsonSchemaDumper(object):
                 "type": "object",
                 "properties": {
                     "type": {"const": "array"},
+                    f"array_dimension": {
+                        "type": "array",
+                        "items": [{"type": "integer"}],
+                    },
                     "array_data": baseType,
                     "array_indexes": {"type": "array", "items": {"type": "integer"}},
                     "array_stored_length": {"type": "integer"},
                     "array_range": {"type": "array", "items": {"type": "integer"}},
                 },
+                "required": ["type", "array_dimension"],
             }
         else:
             dictType = {
                 "type": "object",
                 "properties": {
                     "type": {"const": f"array_{dim}d"},
+                    f"array_{dim}d_dimension": {
+                        "type": "array",
+                        "items": dim * [{"type": "integer"}],
+                    },
                     f"array_{dim}d_flat_data": {"type": "array", "items": baseType},
                     f"array_{dim}d_indexes": {
                         "type": "array",
@@ -48,6 +132,7 @@ class JsonSchemaDumper(object):
                         "maxItems": dim,
                     },
                 },
+                "required": ["type", f"array_{dim}d_dimension"],
             }
         arrType = {"type": "array", "items": baseType}
         for idim in range(1, dim):
@@ -179,12 +264,14 @@ class JsonSchemaDumper(object):
             prop[sName] = {"$ref": f"#/definitions/S_{renames.get(sName,sName)}"}
         if not strict:
             for sName in section.meta_possible_inject:
-                prop[sName] = {"$ref": f"#/definitions/S_{sName}"}
+                if sName not in section.subSections:
+                    prop[sName] = {"$ref": f"#/definitions/S_{sName}"}
         tSchema = {
             "title": f"Section {section.name()}",
             "description": maybeJoinStr(section.section.meta_description),
             "type": "object",
             "properties": prop,
+            "required": required,
         }
         if strict:
             tSchema["additionalProperties"] = False
@@ -202,7 +289,6 @@ class JsonSchemaDumper(object):
             rootSections = sorted(self.schema.rootSections.keys())
         definitions = {}
         if strict:
-            assert 0, "still buggy, to finish"
             definer = ConcreteTypeDefiner(
                 self.schema,
                 typeDumper=lambda path, typeName, superName, renames: definitions.update(

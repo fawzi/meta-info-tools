@@ -185,7 +185,7 @@ class TestMetaJsonSchema(unittest.TestCase):
         "validates the generated schema, and the meta info against itself"
         schema = metaMetaSchema()
         dumper = JsonSchemaDumper(schema)
-        for strict in [False]:
+        for strict in [False, True]:
             if strict:
                 strictName = "strict"
             else:

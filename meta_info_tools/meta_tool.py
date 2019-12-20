@@ -230,6 +230,10 @@ def docCmd(args):
             logging.exception(f"documenting {inF}")
 
 
+def validateCmd(args):
+    assert 0, "to do"
+
+
 def checkWithArgs(schema, args):
     """checks the given schema with the options given in args"""
     clashMap = {
@@ -440,6 +444,30 @@ if __name__ == "__main__":
     )
     checkArgs(parser_check)
     parser_check.set_defaults(func=checkCmd)
+    # create parser for validate command
+    parser_v = subparsers.add_parser(
+        "validate",
+        help="validate json corresponding to the given sections/ dictionaries",
+    )
+    parser_v.add_argument(
+        "--main-dictionary", type=str, help="a dictionary to document"
+    )
+    parser_v.add_argument(
+        "--section-to-validate",
+        type=str,
+        help="the section to validate (defaults to all root sections in the dictionary)",
+    )
+    parser_v.add_argument(
+        "--dict-directory",
+        type=str,
+        help="path to the directory with the .meta_dictionary.json dictionaries",
+    )
+    parser_v.add_argument(
+        "--target-dir",
+        type=str,
+        help="target dir if not given defaults to the directory of the first argument +/doc",
+    )
+    parser_v.set_defaults(func=validateCmd)
     # args=parser.parse_args(['rewrite', '../meta_info/meta_info_exploded/meta_schema.meta_dictionary'])
     # args=parser.parse_args(['cascade','--delete-old-bk'])
     # args=parser.parse_args(['doc', '../../meta_info/meta_info_exploded/common.meta_dictionary', '--extra-path', '../../meta_info/meta_info/meta_dictionary', '--delete-old-bk'])

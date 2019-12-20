@@ -92,7 +92,7 @@ def safeRemove(toRm):
             os.replace(os.path.join(dir, f), t3)
 
 
-def splitStr(string, maxLen=115):
+def splitStr(string, maxLen=80):
     """If the string has newlines or is longer than maxLen ({maxLen}) characters splits it.
 	if maxLen is -1 it does not split. It always returns an array of strings""".format(
         maxLen=maxLen
