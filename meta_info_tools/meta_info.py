@@ -8,6 +8,7 @@ import re, io, stat
 import os, os.path, glob
 
 jd = lambda x: json.dumps(x, sort_keys=True, ensure_ascii=True)
+jdf = lambda x, fOut: json.dump(x, fOut, sort_keys=True, ensure_ascii=True, indent=2)
 from collections import namedtuple
 
 EntryDict = namedtuple("EntryDict", ["meta_info_entry", "metadict_name"])

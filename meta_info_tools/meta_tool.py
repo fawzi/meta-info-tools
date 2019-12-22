@@ -1,10 +1,13 @@
 import os
-from .meta_info import MetaInfo, MetaDictionary, writeFile
+from .meta_info import MetaInfo, MetaDictionary, writeFile, jdf
 from .meta_schema import MetaSchema
 from .meta_html import SiteWriter
 from .meta_check import doChecks, NameCheckLevel, ClashKinds, ClashException
+from .meta_json_schema import JsonSchemaDumper
 import logging
 import shutil
+import json
+import jsonschema
 
 defaultBasePath = os.path.realpath(
     os.path.normpath(
@@ -231,7 +234,40 @@ def docCmd(args):
 
 
 def validateCmd(args):
-    assert 0, "to do"
+    if args.read_json_schema:
+        with open(args.read_json_schema, encoding="utf8") as fIn:
+            jSchema = json.load(fIn)
+    else:
+        if not args.main_dictionary_path:
+            raise Exception(
+                "either --main-dictionary-path of --read-json-schema must be given"
+            )
+        mInfo, d = MetaInfo.withPath(
+            args.main_dictionary_path, extraPaths=args.extra_paths
+        )
+        schema = MetaSchema.forDictionary(dictName=d.metadict_name, metaInfo=mInfo)
+        dumper = JsonSchemaDumper(schema=schema)
+        if args.section_to_validate:
+            sects = args.section_to_validate
+        else:
+            sects = None
+        jSchema = dumper.jsonSchema(
+            rootSections=sects, strict=args.strict, suspendable=not args.simple
+        )
+    if args.write_json_schema:
+        with open(args.write_json_schema, "w", encoding="utf8") as fOut:
+            jdf(jSchema, fOut)
+    if args.pathsToValidate:
+        for p in args.pathsToValidate:
+            try:
+                with open(p, encoding="utf8") as fIn:
+                    toV = json.load(fIn)
+                jsonschema.validate(toV, jSchema)
+            except:
+                logging.exception(f"Error validating {p}.")
+    if args.from_stdin:
+        toV = json.load(sys.stdin)
+        jsonschema.validate(toV, jSchema)
 
 
 def checkWithArgs(schema, args):
@@ -450,22 +486,48 @@ if __name__ == "__main__":
         help="validate json corresponding to the given sections/ dictionaries",
     )
     parser_v.add_argument(
-        "--main-dictionary", type=str, help="a dictionary to document"
+        "--main-dictionary-path", type=str, help="a dictionary to document"
     )
     parser_v.add_argument(
         "--section-to-validate",
         type=str,
-        help="the section to validate (defaults to all root sections in the dictionary)",
+        action="append",
+        help="the section to validate (defaults to all root sections in the --main-dictionary)",
     )
     parser_v.add_argument(
-        "--dict-directory",
+        "--extra-paths",
         type=str,
-        help="path to the directory with the .meta_dictionary.json dictionaries",
+        default=[],
+        action="append",
+        help="path to an additional directory with .meta_dictionary.json dictionaries",
     )
     parser_v.add_argument(
-        "--target-dir",
+        "--read-json-schema",
         type=str,
-        help="target dir if not given defaults to the directory of the first argument +/doc",
+        help="Path to json schema file that should be used for the validation (instead of the one generated from the --main-dictionary --dict-directory and --section-to-validate",
+    )
+    parser_v.add_argument(
+        "--write-json-schema",
+        type=str,
+        help="Path where to write a json schema file for validation (instead of the one generated from the --main-dictionary --dict-directory and --section-to-validate",
+    )
+    parser_v.add_argument(
+        "pathsToValidate", type=str, nargs="+", help="paths to json files to validate"
+    )
+    parser_v.add_argument(
+        "--strict",
+        action="store_true",
+        help="generates a strict schema that complains about extra unknown keys.",
+    )
+    parser_v.add_argument(
+        "--from-stdin",
+        action="store_true",
+        help="Reads a json to validate from stdin.",
+    )
+    parser_v.add_argument(
+        "--simple",
+        action="store_true",
+        help="generates a simpler schema that allows only inline arrays/lists, and not an object with partial content of the array (i.e. it makes the values non suspendable).",
     )
     parser_v.set_defaults(func=validateCmd)
     # args=parser.parse_args(['rewrite', '../meta_info/meta_info_exploded/meta_schema.meta_dictionary'])
