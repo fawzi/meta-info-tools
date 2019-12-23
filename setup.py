@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="meta-info-tools",
-    version="0.0.2",
+    version="0.0.3",
     author="Fawzi Mohamed",
     author_email="fawzi@kitabi.eu",
     description="Tools to handle meta_info",
