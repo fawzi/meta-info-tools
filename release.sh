@@ -1,4 +1,4 @@
-if ![ -e "$HOME/.pypirc" ]; then
+if ! [ -e "$HOME/.pypirc" ]; then
     echo "release requires a pypi account, and information on how to log in, in $HOME/.pypirc ."
     echo trying to generate it.
     if [ -z "$PYPI_USERNAME" ]; then
